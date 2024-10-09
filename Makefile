@@ -6,6 +6,8 @@ include Makefile.local
 # and contains the list of source files and folders
 include Makefile.list
 
+AGAMA_STATIC = 1
+
 LIBNAME_SHARED = agama.so
 LIBNAME_STATIC = agama.a
 OBJECTS  = $(patsubst %.cpp,$(OBJDIR)/%.o,$(SOURCES))

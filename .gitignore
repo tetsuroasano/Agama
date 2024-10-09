@@ -10,7 +10,13 @@ obj/*
 doxy/*
 temp/*
 xcode/*
+build
+agama.egg-info/*
+.cache
 *.pyc
 *.so
+*.a
 .DS_Store
 Makefile.local
+compile_commands.json
+dev/data
