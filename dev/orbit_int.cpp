@@ -6,10 +6,12 @@
 #include "utils.h"
 #include "debug_utils.h"
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <cmath>
 #include <chrono>
+#include <omp.h>
 
 void displayProgress(int progressCount, int total, const std::chrono::time_point<std::chrono::high_resolution_clock>& startTime) {
     float progress = static_cast<float>(progressCount) / total;
@@ -37,28 +39,38 @@ void displayProgress(int progressCount, int total, const std::chrono::time_point
     std::cout.flush();  
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+	if (argc != 3) {
+        std::cout << "Usage: " << argv[0] << " <potential file name> <snapshot file name>" << std::endl;
+        return 1; 
+	}
+
 	const units::InternalUnits unit(units::Kpc, 9.777922216807891 * units::Myr);
 	const units::ExternalUnits extUnits(unit, units::Kpc, units::kms, 232508.54 * units::Msun);
 
+	// Read the potential from the file
 	potential::PtrPotential totalPot;
-	totalPot = potential::readPotential("../data/test.ini", extUnits);
+	totalPot = potential::readPotential(argv[1], extUnits);
 
+	// Read the particles from the file (Gadget binary format)
 	particles::ParticleArrayCar diskParticles;
-
-	diskParticles = particles::readSnapshot("../data/snap_small", extUnits);
+	diskParticles = particles::readSnapshot(argv[2], extUnits);
 	int nbody = diskParticles.size();
 
+	// Set the integration parameters
 	orbit::OrbitIntParams params(/*accuracy*/ 1e-8, /*maxNumSteps*/10000);
 	double init_time = 0.;
-	double total_time = 1.4;
-	double timestep = 0.1;
+	double total_time = 140;
+	double timestep = 10;
 
 	std::vector<orbit::Trajectory> trajectories(nbody);	
 
 	auto startTime = std::chrono::high_resolution_clock::now();
+	int progressCount = 0;
 
+	std::cout << "Using OpenMP with " << omp_get_max_threads() << " threads" << std::endl;
 
+	// Integrate the orbits
 #pragma omp parallel for schedule(dynamic,1024)
 	for (int i = 0; i < nbody; i++){
 		orbit::Trajectory traj;
@@ -70,21 +82,25 @@ int main() {
 		orbint.run(total_time);
 		trajectories[i] = traj;
 
+#pragma omp atomic
+		progressCount++;
+
 #pragma omp critical
 		{
-			displayProgress(i+1, nbody, startTime); 
+			displayProgress(progressCount, nbody, startTime); 
 		}
 
 	}
 	std::cout << std::endl;
 
-  for (int t=0; t < trajectories[0].size(); t++) {
+	// Write the snapshots
+	for (int t=0; t < trajectories[0].size(); t++) {
 		particles::ParticleArrayCar snapshot;
 		for (int i = 0; i < nbody; i++){
 			snapshot.add(trajectories[i][t].first, diskParticles[i].second);
 		}
 		std::stringstream ss;
-    ss << "snapshot_" << std::setw(5) << std::setfill('0') << t;
+		ss << "snapshot_" << std::setw(5) << std::setfill('0') << t;
 		particles::writeSnapshot(ss.str(), snapshot, "Gadget", extUnits);
 
 	}

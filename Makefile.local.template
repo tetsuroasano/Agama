@@ -81,8 +81,8 @@ LINK_FLAGS_LIB_AND_EXE_STATIC    += -L/path/to/gsl/lib -lgsl -lgslcblas
 # > python -c 'import agama; print(agama.__version__)'
 # or, better, run some of the example scripts in the "py" folder.
 # Running the setup.py script to do all these chores is a highly recommended alternative.
-COMPILE_FLAGS_LIB += -DHAVE_PYTHON -I/usr/include/python -I/path/to/numpy/core/include
-LINK_FLAGS_LIB += -lpython
+#COMPILE_FLAGS_LIB += -DHAVE_PYTHON -I/usr/include/python -I/path/to/numpy/core/include
+#LINK_FLAGS_LIB += -lpython
 
 # uncomment the three lines below and adjust the paths to use Cuba library for multidimensional integration
 # (otherwise use Cubature library bundled with the code).
