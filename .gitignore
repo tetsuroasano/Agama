@@ -20,3 +20,4 @@ agama.egg-info/*
 Makefile.local
 compile_commands.json
 dev/data
+dist/*

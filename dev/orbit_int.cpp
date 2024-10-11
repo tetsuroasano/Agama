@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
 
 	std::cout << "Using OpenMP with " << omp_get_max_threads() << " threads" << std::endl;
 
-	// Integrate the orbits
+      // Integrate the orbits
 #pragma omp parallel for schedule(dynamic,1024)
 	for (int i = 0; i < nbody; i++){
 		orbit::Trajectory traj;
