@@ -13,10 +13,12 @@
 
     An equivalent Python example is given in pytests/example_self_consistent_model.py
 */
+#include "coord.h"
 #include "galaxymodel_base.h"
 #include "galaxymodel_selfconsistent.h"
 #include "galaxymodel_velocitysampler.h"
 #include "df_factory.h"
+#include "math_base.h"
 #include "potential_composite.h"
 #include "potential_factory.h"
 #include "potential_multipole.h"
@@ -35,8 +37,7 @@
 using potential::PtrDensity;
 using potential::PtrPotential;
 
-/*
- * Construct a self-consistent isothermal exponential gas disk with Wang (2010)'s method
+/** Construct a self-consistent isothermal exponential gas disk with Wang (2010)'s method
  */
 class GasDisk {
 	private:
@@ -50,33 +51,80 @@ class GasDisk {
 		double c2;               /// sound speed squared
 		double int_energy;       /// specific internal energy
 
-		double Phi_z(const coord::PosCyl &pos, PtrPotential totalPot) {
+
+		/** Phi_z(R, z) := Phi(R, z) - Phi(R,0) */
+		static double Phi_z(const coord::PosCyl &pos, PtrPotential totalPot) {
 			double pot_value = totalPot->value(pos);
 			pot_value -= totalPot->value(coord::PosCyl(pos.R, 0, 0));
 			return pot_value;
 		}
 
-		class : public math::IFunction {
-			public:
-				Ifunc() {};
-		};
-
-	public:
-		GasDisk(double S0, double R0, double temp, double mu=1.23, double kb_over_mp=8.2543997567e-03) :
-			 S0(S0), R0(R0), temp(temp), mu(mu), kB_over_mp(kb_over_mp) {
-				 c2 = kB_over_mp*temp/mu;
-				 int_energy = c2;
-				 if (gamma != 1.0) {
-					 int_energy /= (gamma - 1.0);
-				 }
-			 }
-
+		/** calcuate density */
 		double density(const coord::PosCyl &pos, PtrPotential totalPot) {
-			double I = math::integrate();
+			double I = math::integrate(ExpPhic2(pos, totalPot, c2), 0, 10, 1e-2);
 			double rho0 = 0.5 * S0 * exp(-pos.R / R0) / I;
 			return rho0 * exp(- Phi_z(pos, totalPot)/ c2);
 		}
 
+		/** Integrand class for the integral in the density function */
+		class ExpPhic2 : public math::IFunctionNoDeriv {
+			public:
+				ExpPhic2(const coord::PosCyl &pos, PtrPotential totalPot, double c2): pos(pos), totalPot(totalPot), c2(c2){};
+
+			private:
+				const coord::PosCyl pos;
+				const PtrPotential totalPot;
+				const double c2;
+
+				virtual double value(const double z) const {
+					return exp(- Phi_z(coord::PosCyl(pos.R, z, 0), totalPot) / c2);
+				}
+		};
+
+		class IsothermalGasDisk: public potential::BaseDensity {
+			public:
+				IsothermalGasDisk(GasDisk* gasDisk, PtrPotential totalPot): gasDisk(gasDisk), totalPot(totalPot){};
+				virtual coord::SymmetryType symmetry() const { return coord::ST_AXISYMMETRIC; }
+				virtual std::string name() const { return myName(); }
+				static std::string myName() { return "IsothermalGasDisk"; }
+
+			private:
+				GasDisk* gasDisk;
+				PtrPotential totalPot;
+
+				virtual double densityCyl(const coord::PosCyl &pos, double time) const
+				{ return gasDisk->density(pos, totalPot); }
+				virtual double densityCar(const coord::PosCar &pos, double time) const
+				{  return densityCyl(toPosCyl(pos), time); }
+				virtual double densitySph(const coord::PosSph &pos, double time) const
+				{  return densityCyl(toPosCyl(pos), time); }
+		};
+
+	public:
+		GasDisk(double S0, double R0, double temp, double mu=1.23, double kB_over_mp=8.2543997567e-03) :
+			S0(S0), R0(R0), temp(temp), mu(mu), kB_over_mp(kB_over_mp) {
+				c2 = kB_over_mp*temp/mu;
+				int_energy = c2;
+				if (gamma != 1.0) {
+					int_energy /= (gamma - 1.0);
+				}
+			}
+
+		void calc_velocity(coord::PosVelCyl& point, PtrPotential totalPot) {
+			const double dR = 0.01;
+			double rho_z0 = density(point, totalPot);
+			double drho = density(coord::PosCyl(point.R + 0.5*dR, 0., 0.), totalPot);;
+			drho -= density(coord::PosCyl(point.R - 0.5*dR, 0., 0.), totalPot);;
+			double velCirc2 = pow_2(potential::v_circ(*totalPot, point.R));
+
+			point.vphi = sqrt(velCirc2 + c2*point.R/rho_z0*drho/dR);
+			point.vR = 0.;
+			point.vz = 0.;
+		}
+
+		PtrDensity createDensity(PtrPotential totalPot) {
+			return PtrDensity(new IsothermalGasDisk(this, totalPot));
+		}
 
 };
 
@@ -397,6 +445,12 @@ int main()
 				iniSCMHalo.getDouble("rminSph") * extUnits.lengthUnit,
 				iniSCMHalo.getDouble("rmaxSph") * extUnits.lengthUnit));
 
+	// create gas disk class
+	GasDisk gasDisk(iniPotenGasDisk.getDouble("surfaceDensity") * intUnits.from_Msun_per_Kpc2,
+			iniPotenGasDisk.getDouble("scaleRadius") * extUnits.lengthUnit,
+			1e4);
+	model.components[3] = galaxymodel::PtrComponent(new galaxymodel::ComponentStatic(
+				gasDisk.createDensity(model.totalPotential), true));
 
 	// we can compute the masses even though we don't know the density profile yet
 	std::cout <<

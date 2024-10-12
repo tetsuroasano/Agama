@@ -21,3 +21,4 @@ Makefile.local
 compile_commands.json
 dev/data
 dist/*
+*.swp
