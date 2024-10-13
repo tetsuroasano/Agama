@@ -22,6 +22,7 @@
 #include "potential_composite.h"
 #include "potential_factory.h"
 #include "potential_multipole.h"
+#include "potential_cylspline.h"
 #include "potential_utils.h"
 #include "particles_io.h"
 #include "math_core.h"
@@ -95,9 +96,9 @@ class GasDisk {
 				virtual double densityCyl(const coord::PosCyl &pos, double time) const
 				{ return gasDisk->density(pos, totalPot); }
 				virtual double densityCar(const coord::PosCar &pos, double time) const
-				{  return densityCyl(toPosCyl(pos), time); }
+				{ return densityCyl(toPosCyl(pos), time); }
 				virtual double densitySph(const coord::PosSph &pos, double time) const
-				{  return densityCyl(toPosCyl(pos), time); }
+				{ return densityCyl(toPosCyl(pos), time); }
 		};
 
 	public:
@@ -338,19 +339,21 @@ int main()
 	utils::ConfigFile ini(iniFileName);
 	utils::KeyValueMap
 		iniPotenThinDisk = ini.findSection("Potential thin disk"),
-										 iniPotenThickDisk= ini.findSection("Potential thick disk"),
-										 iniPotenGasDisk  = ini.findSection("Potential gas disk"),
-										 iniPotenBulge    = ini.findSection("Potential bulge"),
-										 iniPotenDarkHalo = ini.findSection("Potential dark halo"),
-										 iniDFThinDisk    = ini.findSection("DF thin disk"),
-										 iniDFThickDisk   = ini.findSection("DF thick disk"),
-										 iniDFStellarHalo = ini.findSection("DF stellar halo"),
-										 iniDFBulge       = ini.findSection("DF bulge"),
-										 iniDFDarkHalo    = ini.findSection("DF dark halo"),
-										 iniSCMDisk       = ini.findSection("SelfConsistentModel disk"),
-										 iniSCMBulge      = ini.findSection("SelfConsistentModel bulge"),
-										 iniSCMHalo       = ini.findSection("SelfConsistentModel halo"),
-										 iniSCM           = ini.findSection("SelfConsistentModel");
+		iniPotenThickDisk= ini.findSection("Potential thick disk"),
+		iniPotenGasDisk  = ini.findSection("Potential gas disk"),
+		iniPotenBulge    = ini.findSection("Potential bulge"),
+		iniPotenDarkHalo = ini.findSection("Potential dark halo"),
+		iniDFThinDisk    = ini.findSection("DF thin disk"),
+		iniDFThickDisk   = ini.findSection("DF thick disk"),
+		iniDFStellarHalo = ini.findSection("DF stellar halo"),
+		iniDFBulge       = ini.findSection("DF bulge"),
+		iniDFDarkHalo    = ini.findSection("DF dark halo"),
+		iniSCMDisk       = ini.findSection("SelfConsistentModel disk"),
+		iniSCMBulge      = ini.findSection("SelfConsistentModel bulge"),
+		iniSCMHalo       = ini.findSection("SelfConsistentModel halo"),
+		iniSCM           = ini.findSection("SelfConsistentModel"),
+		iniGasParams     = ini.findSection("Gas parameters")
+		;
 	if(!iniSCM.contains("rminSph")) {  // most likely file doesn't exist
 		std::cout << "Invalid INI file " << iniFileName << "\n";
 		return -1;
@@ -445,12 +448,19 @@ int main()
 				iniSCMHalo.getDouble("rminSph") * extUnits.lengthUnit,
 				iniSCMHalo.getDouble("rmaxSph") * extUnits.lengthUnit));
 
-	// create gas disk class
+	// replace the static gas disk density component with an isotehrmal gas disk component
 	GasDisk gasDisk(iniPotenGasDisk.getDouble("surfaceDensity") * intUnits.from_Msun_per_Kpc2,
 			iniPotenGasDisk.getDouble("scaleRadius") * extUnits.lengthUnit,
-			1e4);
+			iniGasParams.getDouble("Temperature"));
+	//model.components[3] = galaxymodel::PtrComponent(new galaxymodel::ComponentStatic(
+	//			gasDisk.createDensity(model.totalPotential), true));
 	model.components[3] = galaxymodel::PtrComponent(new galaxymodel::ComponentStatic(
-				gasDisk.createDensity(model.totalPotential), true));
+	potential::DensityAzimuthalHarmonic::create(
+			*gasDisk.createDensity(model.totalPotential),
+			0,
+			30, 0.01, 30,
+			20, 0.01, 10),
+ 	true));
 
 	// we can compute the masses even though we don't know the density profile yet
 	std::cout <<
@@ -464,8 +474,16 @@ int main()
 
 
 	// do a few more iterations to obtain the self-consistent density profile for both disks
-	for(int iteration=1; iteration<=5; iteration++)
+	for(int iteration=1; iteration<=5; iteration++){
 		doIteration(model, iteration);
+		model.components[3] = galaxymodel::PtrComponent(new galaxymodel::ComponentStatic(
+					potential::DensityAzimuthalHarmonic::create(
+						*gasDisk.createDensity(model.totalPotential),
+						0,
+						30, 0.01, 30,
+						20, 0.01, 10),
+					true));
+	}
 
 	// output various profiles (only for stellar components)
 	std::cout << "\033[1;33mComputing density profiles and velocity distribution\033[0m\n";
@@ -506,10 +524,17 @@ int main()
 	// we didn't use an action-based DF for the gas disk, leaving it as a static component;
 	// to create an N-body representation, we sample the density profile and assign velocities
 	// from the axisymmetric Jeans equation with equal velocity dispersions in R,z,phi
-	std::cout << "Writing an N-body model for the gas disk\n";
-	particles::writeSnapshot("model_gas_final", galaxymodel::assignVelocity(
-				galaxymodel::sampleDensity(*model.components[3]->getDensity(), 24000),
-				/*parameters for the axisymmetric Jeans velocity sampler*/
-				*model.components[3]->getDensity(), *model.totalPotential, /*beta*/ 0., /*kappa*/ 1.),
+	//
+	//std::cout << "Writing an N-body model for the gas disk\n";
+	//particles::writeSnapshot("model_gas_final", galaxymodel::assignVelocity(
+	//			galaxymodel::sampleDensity(*model.components[3]->getDensity(), 24000),
+	//			/*parameters for the axisymmetric Jeans velocity sampler*/
+	//			*model.components[3]->getDensity(), *model.totalPotential, /*beta*/ 0., /*kappa*/ 1.),
+	//		format, extUnits);
+
+	particles::writeSnapshot("model_gas_final", 
+			galaxymodel::sampleDensity(*model.components[3]->getDensity(), 200000),
 			format, extUnits);
+
+	return 0;
 }
