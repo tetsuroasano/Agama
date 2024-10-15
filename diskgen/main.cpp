@@ -23,6 +23,7 @@
 #include "math_base.h"
 #include "math_linalg.h"
 #include "math_sample.h"
+#include "potential_base.h"
 #include "potential_composite.h"
 #include "potential_factory.h"
 #include "potential_multipole.h"
@@ -36,6 +37,7 @@
 #include "utils_config.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <cmath>
 #include <cstdlib>
 
@@ -69,6 +71,11 @@ class GasDisk {
 		PtrDensity createDensity(const PtrPotential& totalPot) {
 			return PtrDensity(new IsothermalGasDisk(this, totalPot));
 		}
+		PtrDensity createDensity(const PtrPotential& totalPot,
+				const galaxymodel::BaseSelectionFunction& sf, const coord::SymmetryType sym_type) {
+			return PtrDensity(new IsothermalGasDisk(this, totalPot, sf, sym_type));
+		}
+
 
 private:
 		const double S0;         /// Surface density
@@ -97,7 +104,7 @@ private:
 			return rho0 * exp(- Phi_z(pos, totalPot)/ c2);
 		}
 
-		/** Integrand class for the integral in the density function */
+		/** Helper class for the integral in the density function */
 		class ExpPhic2 : public math::IFunctionNoDeriv {
 			public:
 				ExpPhic2(const coord::PosCyl &pos, const PtrPotential& totalPot, double c2): pos(pos), totalPot(totalPot), c2(c2){};
@@ -114,22 +121,40 @@ private:
 
 		class IsothermalGasDisk: public potential::BaseDensity {
 			public:
-				IsothermalGasDisk(GasDisk* gasDisk, const PtrPotential& totalPot): gasDisk(gasDisk), totalPot(totalPot){};
-				virtual coord::SymmetryType symmetry() const { return coord::ST_AXISYMMETRIC; }
+				IsothermalGasDisk(GasDisk* gasDisk,
+						const PtrPotential& totalPot):
+				 	gasDisk(gasDisk), totalPot(totalPot){};
+				IsothermalGasDisk(GasDisk* gasDisk,
+						const PtrPotential& totalPot,
+					 	const galaxymodel::BaseSelectionFunction& sf,
+						const coord::SymmetryType sym_type
+						):
+				 	gasDisk(gasDisk), totalPot(totalPot), sf(sf), sym_type(sym_type){};
+				virtual coord::SymmetryType symmetry() const { return sym_type; }
 				virtual std::string name() const { return myName(); }
 				static std::string myName() { return "IsothermalGasDisk"; }
 
 			private:
 				GasDisk* gasDisk;
 				const PtrPotential& totalPot;
+				const galaxymodel::BaseSelectionFunction& sf = galaxymodel::selectionFunctionTrivial;
+				const coord::SymmetryType sym_type = coord::ST_AXISYMMETRIC;
 
-				virtual double densityCyl(const coord::PosCyl &pos, double time) const
-				{ return gasDisk->density(pos, totalPot); }
-				virtual double densityCar(const coord::PosCar &pos, double time) const
-				{ return densityCyl(toPosCyl(pos), time); }
-				virtual double densitySph(const coord::PosSph &pos, double time) const
-				{ return densityCyl(toPosCyl(pos), time); }
+				virtual double densityCyl(const coord::PosCyl &pos, double time) const { 
+					double sf_value = sf.value(coord::PosVelCar(coord::toPosCar(pos), coord::VelCar(0,0,0)));
+					return gasDisk->density(pos, totalPot) * sf_value;
+				}
+				virtual double densityCar(const coord::PosCar &pos, double time) const { 
+					double sf_value = sf.value(coord::PosVelCar(pos, coord::VelCar(0,0,0)));
+					return densityCyl(toPosCyl(pos), time) * sf_value;
+				}
+				virtual double densitySph(const coord::PosSph &pos, double time) const {
+					double sf_value = sf.value(coord::PosVelCar(coord::toPosCar(pos), coord::VelCar(0,0,0)));
+					return densityCyl(toPosCyl(pos), time) * sf_value;
+				}
 		};
+
+
 };
 
 // define internal unit system - arbitrary numbers here! the result should not depend on their choice
@@ -351,38 +376,27 @@ void doIteration(galaxymodel::SelfConsistentModel& model, GasDisk& gasDisk, int 
 		exit(1);  // abort in case of problems
 }
 
-/** Distribution fuction as a function of position and velocity
- * Used for sampling
- */
-class DFCar : public math::IFunctionNdim{
-	public:
-		DFCar(const df::BaseDistributionFunction& _df,
-				const actions::BaseActionFinder& actionFinder): df_aa(_df), actionFinder(actionFinder){}
 
-		virtual void eval(const double vars[], double values[]) const {
-			coord::PosVelCar point(
-					vars[0], vars[1], vars[2],
-					vars[3], vars[4], vars[5]);
-			double df_value = df_aa.value(actionFinder.actions(toPosVelCyl(point)));
-			if (df_value < 0) {
-				values[0] = 0;
-			} else if (std::isnan(df_value)) {
-				values[0] = 0;
-			} else{
-				values[0] = df_value;
-			}
+/** Selection function for the local box */
+class SelectionFunctionLocalBox: public galaxymodel::BaseSelectionFunction {
+	public:
+		SelectionFunctionLocalBox(const std::vector<double>& lower_pos, const std::vector<double>& upper_pos):
+			lower_pos(lower_pos), upper_pos(upper_pos) {};
+
+		virtual double value(const coord::PosVelCar& point) const { 
+			if (contains(point)) {return 1.;}
+			else {return 0.;}
 		}
 
-		/// number of variables (3D position and velocity)
-    virtual unsigned int numVars()   const { return 6; }
-    /// number of values to compute (1 value of DF)
-    virtual unsigned int numValues() const { return 1; }
-
 	private:
-		const df::BaseDistributionFunction& df_aa;
-		const actions::BaseActionFinder& actionFinder;
-};
+		const std::vector<double> lower_pos, upper_pos;;
 
+		virtual bool contains(const coord::PosVelCar &point) const {
+			return point.x >= lower_pos[0] && point.x <= upper_pos[0] &&
+				point.y >= lower_pos[1] && point.y <= upper_pos[1] &&
+				point.z >= lower_pos[2] && point.z <= upper_pos[2];
+		}
+};
 
 
 int main()
@@ -508,8 +522,8 @@ int main()
 			iniGasParams.getDouble("Temperature"));
 	//model.components[3] = galaxymodel::PtrComponent(new galaxymodel::ComponentStatic(
 	//			gasDisk.createDensity(model.totalPotential), true));
-	
-	
+
+
 	// do a few more iterations to obtain the self-consistent density profile for both disks
 	for(int iteration=1; iteration<=5; iteration++){
 		doIteration(model, gasDisk, iteration);
@@ -520,38 +534,70 @@ int main()
 				gasDisk.createDensity(model.totalPotential), true));
 	printoutInfo(model, "Final");
 
+	std::ifstream inputFile("../data/DomainCoord128.txt");
+	std::vector<std::vector<double>> domain_data;
+	std::string line;
+	while (getline(inputFile, line)) {
+		std::istringstream iss(line);
+		std::vector<double> numbers;
+		double num;
 
-	DFCar dfCar(*dfStellar, *model.actionFinder);
-	double lower[6] = {-150, -150, -150, -300, -300, -300};
-	double upper[6] = {150, 150, 150, 300, 300, 300};
-	math::Matrix<double> samples;
-	double integral, integral_err;
-	size_t numTrialPoints;
-	math::sampleNdim(dfCar, lower, upper, 1000, samples, &numTrialPoints, &integral, &integral_err);
-	std::cout << "Integral of the DF over the entire phase space: " << integral * intUnits.to_Msun  << " +- " << integral_err * intUnits.to_Msun << "\n";
-	std::cout << "Num trials: " << numTrialPoints << std::endl;
+		for (int i = 0; i < 6; ++i) {
+			if (iss >> num) {
+				numbers.push_back(num);
+			} else {
+				std::cout << "Error in reading the input file" << std::endl;
+				return 1;
+			}
+		}
+
+		domain_data.push_back(numbers);
+	}
+	inputFile.close();
+
+	for (const auto& row : domain_data) {
+		std::vector<double> lower_pos = {row[0], row[2], row[4]};
+		std::vector<double> upper_pos = {row[1], row[3], row[5]};
+		SelectionFunctionLocalBox selectionFunction(lower_pos, upper_pos);
+		galaxymodel::GalaxyModel bulge(*model.totalPotential, *model.actionFinder, *dfBulge,
+				selectionFunction);
+		PtrDensity ptr_dens = gasDisk.createDensity(model.totalPotential, selectionFunction, coord::ST_NONE);
+		double mass =ptr_dens->totalMass();
+		std::cout << "Mass in the domain: " << mass * intUnits.to_Msun << std::endl;
+	}
+
+
+	std::vector<double> lower_pos = {-250, -250, -250};
+	std::vector<double> upper_pos = {250, 250, 250};
+	SelectionFunctionLocalBox selectionFunction(lower_pos, upper_pos);
+	galaxymodel::GalaxyModel bulge(*model.totalPotential, *model.actionFinder, *dfBulge,
+			selectionFunction);
+
+	PtrDensity ptr_gas_dens = gasDisk.createDensity(model.totalPotential, selectionFunction, coord::ST_AXISYMMETRIC);
+	double mass =ptr_gas_dens->totalMass();
+	std::cout << "Total mass: " << mass * intUnits.to_Msun << std::endl;
 
 
 	// export model to an N-body snapshot
-	std::cout << "\033[1;33mCreating an N-body representation of the model\033[0m\n";
-	std::string format = "text";   // could use "text", "nemo" or "gadget" here
+	//std::cout << "\033[1;33mCreating an N-body representation of the model\033[0m\n";
+	//std::string format = "text";   // could use "text", "nemo" or "gadget" here
 
-	// now create genuinely self-consistent models of both components,
-	// by drawing positions and velocities from the DF in the given (self-consistent) potential
-	std::cout << "Writing a complete DF-based N-body model for the dark matter halo\n";
-	particles::writeSnapshot("model_dm_final", galaxymodel::samplePosVel(
-				galaxymodel::GalaxyModel(*model.totalPotential, *model.actionFinder, *dfHalo), 800000),
-			format, extUnits);
-	std::cout << "Writing a complete DF-based N-body model for the stellar bulge, disk and halo\n";
-	dfStellarArray.push_back(dfBulge);
-	dfStellar.reset(new df::CompositeDF(dfStellarArray));  // all stellar components incl. bulge
-	particles::writeSnapshot("model_stars_final", galaxymodel::samplePosVel(
-				galaxymodel::GalaxyModel(*model.totalPotential, *model.actionFinder, *dfStellar), 200000),
-			format, extUnits);
+	//// now create genuinely self-consistent models of both components,
+	//// by drawing positions and velocities from the DF in the given (self-consistent) potential
+	//std::cout << "Writing a complete DF-based N-body model for the dark matter halo\n";
+	//particles::writeSnapshot("model_dm_final", galaxymodel::samplePosVel(
+	//			galaxymodel::GalaxyModel(*model.totalPotential, *model.actionFinder, *dfHalo), 800000),
+	//		format, extUnits);
+	//std::cout << "Writing a complete DF-based N-body model for the stellar bulge, disk and halo\n";
+	//dfStellarArray.push_back(dfBulge);
+	//dfStellar.reset(new df::CompositeDF(dfStellarArray));  // all stellar components incl. bulge
+	//particles::writeSnapshot("model_stars_final", galaxymodel::samplePosVel(
+	//			galaxymodel::GalaxyModel(*model.totalPotential, *model.actionFinder, *dfStellar), 200000),
+	//		format, extUnits);
 
-	particles::writeSnapshot("model_gas_final", 
-			galaxymodel::sampleDensity(*model.components[3]->getDensity(), 200000),
-			format, extUnits);
+	//particles::writeSnapshot("model_gas_final", 
+	//		galaxymodel::sampleDensity(*model.components[3]->getDensity(), 200000),
+	//		format, extUnits);
 
 	return 0;
 }
