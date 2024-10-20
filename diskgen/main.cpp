@@ -47,6 +47,11 @@
 using potential::PtrDensity;
 using potential::PtrPotential;
 
+// define internal unit system - arbitrary numbers here! the result should not depend on their choice
+const units::InternalUnits intUnits(1*units::Kpc, 977.7922216807891*units::Myr);
+
+// define external unit system describing the data (including the parameters in INI file)
+const units::ExternalUnits extUnits(intUnits, 1.*units::Kpc, 1.*units::kms, 1.*units::Msun);
 /** Construct a self-consistent isothermal exponential gas disk with Wang (2010)'s method
  */
 class GasDisk {
@@ -226,10 +231,7 @@ class DFIntegrandCar : public math::IFunctionNdim {
 particles::ParticleArrayCar samplePosVelCar(const galaxymodel::GalaxyModel model, const double partMass,
   const double lower_pos[], const double upper_pos[]) {
 	double Phi;
-	model.potential.eval(coord::PosCar(0.5*(lower_pos[0]+upper_pos[0]),
-																		 0.5*(lower_pos[1]+upper_pos[1]),
-																		 0.5*(lower_pos[2]+upper_pos[2])),
-			&Phi);
+	model.potential.eval(coord::PosCar(0., 0., 0.), &Phi);
 	double vesc = sqrt(-2.*Phi);
 	double lower[6] = {lower_pos[0], lower_pos[1], lower_pos[2], -vesc*0.57, -vesc*0.57, -vesc*0.57};
 	double upper[6] = {upper_pos[0], upper_pos[1], upper_pos[2],  vesc*0.57,  vesc*0.57,  vesc*0.57};
@@ -237,6 +239,7 @@ particles::ParticleArrayCar samplePosVelCar(const galaxymodel::GalaxyModel model
 	double totalMass, errorMass;
 
 	math::sampleNdim(DFIntegrandCar(model), lower, upper, 1e6, result, NULL, &totalMass, &errorMass);
+	std::cout << totalMass * intUnits.to_Msun<< std::endl;
 	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
 
 	size_t numPoints = (size_t)(totalMass / partMass);
@@ -253,11 +256,6 @@ particles::ParticleArrayCar samplePosVelCar(const galaxymodel::GalaxyModel model
 	 return points;
 };
 
-// define internal unit system - arbitrary numbers here! the result should not depend on their choice
-const units::InternalUnits intUnits(1*units::Kpc, 977.7922216807891*units::Myr);
-
-// define external unit system describing the data (including the parameters in INI file)
-const units::ExternalUnits extUnits(intUnits, 1.*units::Kpc, 1.*units::kms, 1.*units::Msun);
 
 // used for outputting the velocity distribution (the value is read from the ini file)
 double solarRadius = NAN;
@@ -732,9 +730,9 @@ int main()
 	//		par,
 	//		"text", extUnits);
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
-#endif
+//#ifdef _OPENMP
+//#pragma omp parallel for schedule(dynamic)
+//#endif
 for (int idx =0; idx < domain_data.size(); idx++) {
 			auto row = domain_data[idx];
 			std::vector<double> lower_pos = {row[0] * extUnits.lengthUnit, row[2] * extUnits.lengthUnit, row[4] * extUnits.lengthUnit};
@@ -742,9 +740,9 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 			SelectionFunctionLocalBox selectionFunction(lower_pos, upper_pos);
 	
 			std::cout << boxMass(model.components[0]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << " ";
-			std::cout << boxMass(model.components[1]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << " ";
-			std::cout << boxMass(model.components[2]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << " ";
-			std::cout << boxMass(model.components[3]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << std::endl;
+			//std::cout << boxMass(model.components[1]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << " ";
+			//std::cout << boxMass(model.components[2]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << " ";
+			//std::cout << boxMass(model.components[3]->getDensity(), lower_pos.data(), upper_pos.data()) * intUnits.to_Msun << std::endl;
 			
 			galaxymodel::GalaxyModel bulge(*model.totalPotential, *model.actionFinder, *dfBulge);
 			galaxymodel::GalaxyModel thinDisk(*model.totalPotential, *model.actionFinder, *dfThin);
@@ -754,8 +752,9 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 			galaxymodel::GalaxyModel stellar(*model.totalPotential, *model.actionFinder, *dfStellar);
 			PtrDensity ptrDensGasDisk = gasDisk.createDensity(model.totalPotential);
 	
-			particles::ParticleArrayCar par = sampleParticles(stellar, 1e5 * intUnits.from_Msun, lower_pos.data(), upper_pos.data());
+			particles::ParticleArrayCar par = sampleParticles(thickDisk, 1e4 * intUnits.from_Msun, lower_pos.data(), upper_pos.data());
 			std::cout << idx << " " << par.totalMass() * intUnits.to_Msun << std::endl;
+			std::cout << "\n";
 			//sampleParticles(bulge, 1e6 * intUnits.from_Msun, lower_pos.data(), upper_pos.data());
 			particles::writeSnapshot("model_thinDisk_test"+std::to_string(idx),
 					par,
