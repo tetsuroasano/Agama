@@ -401,7 +401,10 @@ int main()
 	// final gas disk potential without CylSpline approximation
 	model.components[3] = galaxymodel::PtrComponent(new galaxymodel::ComponentStatic(
 				gasDisk.createDensity(model.totalPotential), true));
+
+	std::cout << "\033[1;32m**** FINISHED MODELLING ****\033[0m\n";
 	printoutInfo(model, "Final");
+	std::cout << std::endl;
 
 
 	//////////////////// SAMPLE PARTICLES ////////////////////
@@ -423,9 +426,6 @@ int main()
 	}
 	inputFile.close();
 
-//#ifdef _OPENMP
-//#pragma omp parallel for schedule(dynamic)
-//#endif
 for (int idx =0; idx < domain_data.size(); idx++) {
 	auto row = domain_data[idx];
 	//for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
@@ -472,13 +472,14 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	std::cout << dmHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
 	std::cout << "  Gas Disk: " << gasDiskParticles.size() << " particles (";
 	std::cout << gasDiskParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	std::cout << std::endl;
 	
 
 	// Write particles to file in ascii format if needed
-	//particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
-	//particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
-	//particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
-	//particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
+	particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
+	particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
+	particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
+	particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
 }
 
 return 0;
