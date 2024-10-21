@@ -242,6 +242,9 @@ particles::ParticleArrayCar sampleParticles(
 		points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0., 0., 0.),
 				       partMass);
 	}
+	for(size_t i=0; i<numPoints; i++) {
+		gasDisk.computeVelocity(points[i].first, totalPot);
+	}
 
 	return points;
 }

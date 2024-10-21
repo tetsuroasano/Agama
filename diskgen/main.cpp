@@ -33,6 +33,7 @@
 #include "utils.h"
 #include "utils_config.h"
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -472,14 +473,35 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	std::cout << dmHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
 	std::cout << "  Gas Disk: " << gasDiskParticles.size() << " particles (";
 	std::cout << gasDiskParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	std::cout << " Total: " << stellarParticles.size() + bulgeParticles.size() + dmHaloParticles.size() + gasDiskParticles.size() << " particles ";
 	std::cout << std::endl;
+
+	// How to access the particle data
+	//std::cout << std::left 
+	//	<< std::setw(15) << "x [kpc]" 
+	//	<< std::setw(15) << "y [kpc]"
+	//	<< std::setw(15) << "z [kpc]"
+	//	<< std::setw(15) << "vx [km/s]"
+	//	<< std::setw(15) << "vy [km/s]"
+	//	<< std::setw(15) << "vz [km/s]"
+	//	<< std::setw(15) << "m [Msun]" << std::endl;
+	//for (size_t i = 0; i < 10; i++) {
+	//std::cout << std::left
+	//	<< std::setw(15) << stellarParticles[i].first.x / extUnits.lengthUnit
+	//	<< std::setw(15) << stellarParticles[i].first.y / extUnits.lengthUnit
+	//	<< std::setw(15) << stellarParticles[i].first.z / extUnits.lengthUnit
+	//	<< std::setw(15) << stellarParticles[i].first.vx / extUnits.velocityUnit
+	//	<< std::setw(15) << stellarParticles[i].first.vy / extUnits.velocityUnit
+	//	<< std::setw(15) << stellarParticles[i].first.vz / extUnits.velocityUnit
+	//	<< std::setw(15) << stellarParticles[i].second / extUnits.massUnit << std::endl;
+	//}
 	
 
 	// Write particles to file in ascii format if needed
-	particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
-	particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
-	particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
-	particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
+	//particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
+	//particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
+	//particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
+	//particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
 }
 
 return 0;
