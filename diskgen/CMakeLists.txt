@@ -24,7 +24,7 @@ set(COMMON_INCLUDES ${CMAKE_SOURCE_DIR}/../src)
 
 link_directories(${CMAKE_SOURCE_DIR}/../extras/lib)
 
-add_executable(main main.cpp)
+add_executable(main main.cpp gas_scm.cpp)
 target_include_directories(main PRIVATE ${COMMON_INCLUDES})
 target_compile_options(main PRIVATE ${CXX_FLAGS})
 target_link_libraries(main PRIVATE  ${CMAKE_SOURCE_DIR}/../agama.a libunsio.a libnemo.a ${GSL_LIBS} ${OpenMP_LIBS})

@@ -13,14 +13,13 @@
 
     An equivalent Python example is given in pytests/example_self_consistent_model.py
 */
-#include "actions_base.h"
+#include "gas_scm.h"
+
 #include "coord.h"
 #include "galaxymodel_base.h"
 #include "galaxymodel_selfconsistent.h"
 #include "df_factory.h"
 #include "math_base.h"
-#include "math_linalg.h"
-#include "math_sample.h"
 #include "particles_base.h"
 #include "potential_base.h"
 #include "potential_composite.h"
@@ -28,7 +27,6 @@
 #include "potential_cylspline.h"
 #include "potential_utils.h"
 #include "particles_io.h"
-#include "math_core.h"
 #include "math_base.h"
 #include "math_spline.h"
 #include "units.h"
@@ -49,273 +47,11 @@ const units::InternalUnits intUnits(1*units::Kpc, 977.7922216807891*units::Myr);
 
 // define external unit system describing the data (including the parameters in INI file)
 const units::ExternalUnits extUnits(intUnits, 1.*units::Kpc, 1.*units::kms, 1.*units::Msun);
-/** Construct a self-consistent isothermal exponential gas disk with Wang (2010)'s method
- */
-class GasDisk {
-		public:
-		GasDisk(double S0, double R0, double temp, double mu=1.23, double kB_over_mp=8.2543997567e-03) :
-			S0(S0), R0(R0), temp(temp), mu(mu), kB_over_mp(kB_over_mp), c2(kB_over_mp*temp/mu) {
-				int_energy = c2;
-				if (gamma != 1.0) {
-					int_energy /= (gamma - 1.0);
-				}
-			}
 
-		void computeVelocity(coord::PosVelCyl& point, const PtrPotential& totalPot) const {
-			const double dR = 0.01;
-			double rho_z0 = density(point, totalPot);
-			double drho = density(coord::PosCyl(point.R + 0.5*dR, 0., 0.), totalPot);;
-			drho -= density(coord::PosCyl(point.R - 0.5*dR, 0., 0.), totalPot);;
-			double velCirc2 = pow_2(potential::v_circ(*totalPot, point.R));
-			double vphi2 = velCirc2 + c2*point.R/rho_z0*drho/dR;
-
-			if (vphi2 > 0) {point.vphi = sqrt(vphi2);} else {point.vphi = 0;}
-			point.vR = 0.;
-			point.vz = 0.;
-		}
-		void computeVelocity(coord::PosVelCar& point, const PtrPotential& totalPot) const {
-			coord::PosVelCyl cyl = coord::toPosVelCyl(point);
-			computeVelocity(cyl, totalPot);
-			point = coord::toPosVelCar(cyl);
-		}
-		void computeVelocity(coord::PosVelSph& point, const PtrPotential& totalPot) const {
-			coord::PosVelCyl cyl = coord::toPosVelCyl(point);
-			computeVelocity(cyl, totalPot);
-			point = coord::toPosVelSph(cyl);
-		}
-
-
-		PtrDensity createDensity(const PtrPotential& totalPot) {
-			return PtrDensity(new IsothermalGasDisk(this, totalPot));
-		}
-
-
-private:
-		const double S0;         /// Surface density
-		const double R0;         /// Scale radius
-		const double temp;       /// temperature in K
-														 ///
-		const double gamma = 1;  /// adiabatic index (fixed to 1 for isothermal gas)
-		const double mu; 	       /// mean atomic weight
-		const double kB_over_mp; /// Boltzmann constant over proton mass (in intUnits.velocity^2/K)
-		const double c2;               /// sound speed squared
-		double int_energy;       /// specific internal energy
-
-
-		/** Phi_z(R, z) := Phi(R, z) - Phi(R,0) */
-		static double Phi_z(const coord::PosCyl &pos, const PtrPotential& totalPot) {
-			double pot_value = totalPot->value(pos);
-			pot_value -= totalPot->value(coord::PosCyl(pos.R, 0, 0));
-			return pot_value;
-		}
-
-		/** calcuate density */
-		double density(const coord::PosCyl &pos, const PtrPotential& totalPot) const {
-			// TODO : automatically set the upper limit of the integral
-			double I = math::integrate(ExpPhic2(pos, totalPot, c2), 0, 10, 1e-3);
-			double rho0 = 0.5 * S0 * exp(-pos.R / R0) / I;
-			return rho0 * exp(- Phi_z(pos, totalPot)/ c2);
-		}
-
-		/** Helper class for the integral in the density function */
-		class ExpPhic2 : public math::IFunctionNoDeriv {
-			public:
-				ExpPhic2(const coord::PosCyl &pos, const PtrPotential& totalPot, double c2): pos(pos), totalPot(totalPot), c2(c2){};
-
-			private:
-				const coord::PosCyl pos;
-				const PtrPotential& totalPot;
-				const double c2;
-
-				virtual double value(const double z) const {
-					return exp(- Phi_z(coord::PosCyl(pos.R, z, 0), totalPot) / c2);
-				}
-		};
-
-		class IsothermalGasDisk: public potential::BaseDensity {
-			public:
-				IsothermalGasDisk(GasDisk* gasDisk,
-						const PtrPotential& totalPot):
-				 	gasDisk(gasDisk), totalPot(totalPot){};
-				virtual coord::SymmetryType symmetry() const { return sym_type; }
-				virtual std::string name() const { return myName(); }
-				static std::string myName() { return "IsothermalGasDisk"; }
-
-			
-			private:
-				GasDisk* gasDisk;
-				const PtrPotential& totalPot;
-				const coord::SymmetryType sym_type = coord::ST_AXISYMMETRIC;
-
-				virtual double densityCyl(const coord::PosCyl &pos, double time) const { 
-					return gasDisk->density(pos, totalPot);
-				}
-				virtual double densityCar(const coord::PosCar &pos, double time) const { 
-					return densityCyl(toPosCyl(pos), time);
-				}
-				virtual double densitySph(const coord::PosSph &pos, double time) const {
-					return densityCyl(toPosCyl(pos), time);
-				}
-		};
-
-};
-
-
-/// Helper class for computing the density at a given point in Cartesian coordinates
-class DensityIntegrandCar : public math:: IFunctionNdim {
-	public :
-		DensityIntegrandCar(const potential::BaseDensity& _dens) : dens(_dens) {}
-
-		virtual void eval(const double vars[], double values[]) const {
-			coord::PosCar pos(vars[0], vars[1], vars[2]);
-			values[0] = dens.density(pos, /*time*/0);
-			if (!isFinite(values[0]) || values[0] < 0) values[0] = 0;
-		}
-
-    virtual unsigned int numVars() const { return  3; }
-    virtual unsigned int numValues() const { return 1; }
-
-	private:
-		 const potential::BaseDensity& dens;
-};
-
-
-/// compute the mass of a density component within a given box
-double boxMass(const PtrDensity ptrDens, const double lower[], const double upper[]) {
-	double mass, massErr;
-	int numEval;
-	math::integrateNdim(DensityIntegrandCar(*ptrDens),
-			lower, upper, 1e-4, 1e6, &mass, &massErr, &numEval);
-
-	//DensityIntegrandCar f(*ptrDens);
-	//double mass_tmp = 0;
-	//double dx = (upper[0] - lower[0]) / 100;
-	//double dy = (upper[1] - lower[1]) / 100;
-	//double dz = (upper[2] - lower[2]) / 100;
-
-	//for (double x = 0.5*dx + lower[0]; x <= upper[0]; x+=dx) {
-	//for (double y = 0.5*dy + lower[1]; y <= upper[1]; y+=dy) {
-	//for (double z = 0.5*dz + lower[2]; z <= upper[2]; z+=dz) {
-	//	double vars[] = {x, y, z};
-	//	double tmp;
-	//	f.eval(vars, &tmp);
-	//	mass_tmp += tmp *dx*dy*dz;
-	//}
-	//}
-	//}
-	//mass = fmax(mass, mass_tmp);
-	return mass;
-}
-
-
-/// sample particles from a density component within a given box
-particles::ParticleArrayCar sampleDensityCar(const PtrDensity ptrDens, const double partMass,
-  const double lower[], const double upper[]) {
-	 math::Matrix<double> result;
-	 double totalMass, errorMass;
-	 
-	 try{
-		 math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, 1e6, result, NULL, &totalMass, &errorMass);
-	 } catch (const std::runtime_error& e) {
-		 if (std::string(e.what()) == "sampleNdim: function is identically zero inside the region" ||
-				 std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
-				) {
-			 std::cerr << "Caught specific runtime error: " << e.what() << std::endl;
-			 return particles::ParticleArrayCar();
-		 } else {
-			 std::cerr << "Unexpected runtime error: " << e.what() << std::endl;
-			 std::exit(EXIT_FAILURE); 
-		 }
-	 } catch (const std::exception& e) {
-		 std::cerr << "Unexpected exception: " << e.what() << std::endl;
-		 std::exit(EXIT_FAILURE);  
-	 }
-
-	 //const double pointMass = totalMass / result.rows();
-	 //particles::ParticleArray<coord::PosVelCar> points;
-	 //for(size_t i=0; i<result.rows(); i++) {
-	 //  points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0, 0, 0), pointMass);
-	 //}
-	 
-	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
-
-	size_t numPoints = (size_t)(totalMass / partMass);
-	if (numPoints > result.rows()) {
-		 math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, numPoints, result, NULL, &totalMass, &errorMass);
-	}
-	particles::ParticleArray<coord::PosVelCar> points;
-	for(size_t i=0; i<numPoints; i++) {
-		points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0., 0., 0.),
-				partMass);
-	}
-	 return points;
-};
-
-
-/// Helper class for sampling position and velocity from a DF (not scaled)
-class DFIntegrandCar : public math::IFunctionNdim {
-	public:
-		DFIntegrandCar(const galaxymodel::GalaxyModel& _model): model(_model){}
-
-		virtual void eval(const double vars[], double values[]) const {
-			actions::Actions act = model.actFinder.actions(
-					coord::toPosVelCyl(coord::PosVelCar(vars[0], vars[1], vars[2], vars[3], vars[4], vars[5]))
-					);
-			values[0] = model.distrFunc.value(act);
-			if (!isFinite(values[0]) || values[0] < 0) values[0] = 0;
-		}
-
-    virtual unsigned int numVars() const { return  6; }
-    virtual unsigned int numValues() const { return 1; }
-
-	private:
-		const galaxymodel::GalaxyModel& model;
-};
-
-
-/// sample particles from a DF within a given box
-particles::ParticleArrayCar samplePosVelCar(const galaxymodel::GalaxyModel model, const double partMass,
-  const double lower_pos[], const double upper_pos[]) {
-	double Phi;
-	model.potential.eval(coord::PosCar(0., 0., 0.), &Phi);
-	double vesc = sqrt(-2.*Phi);
-	double lower[6] = {lower_pos[0], lower_pos[1], lower_pos[2], -vesc*0.57, -vesc*0.57, -vesc*0.57};
-	double upper[6] = {upper_pos[0], upper_pos[1], upper_pos[2],  vesc*0.57,  vesc*0.57,  vesc*0.57};
-	math::Matrix<double> result;
-	double totalMass, errorMass;
-
-	try {
-		math::sampleNdim(DFIntegrandCar(model), lower, upper, 1e6, result, NULL, &totalMass, &errorMass);
-	} catch (const std::runtime_error& e) {
-		if (std::string(e.what()) == "sampleNdim: function is identically zero inside the region" ||
-				std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
-				) {
-			std::cerr << "Caught specific runtime error: " << e.what() << std::endl;
-			return particles::ParticleArrayCar();
-		} else {
-			std::cerr << "Unexpected runtime error: " << e.what() << std::endl;
-			std::exit(EXIT_FAILURE); 
-		}
-	} catch (const std::exception& e) {
-		std::cerr << "Unexpected exception: " << e.what() << std::endl;
-		std::exit(EXIT_FAILURE);  
-	}
-
-	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
-
-	size_t numPoints = (size_t)(totalMass / partMass);
-	if (numPoints > result.rows()) {
-		math::sampleNdim(DFIntegrandCar(model), lower, upper, numPoints, result, NULL, &totalMass, &errorMass);
-	}
-	particles::ParticleArray<coord::PosVelCar> points;
-	for(size_t i=0; i<numPoints; i++) {
-		points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2),
-																result(i,3), result(i,4), result(i,5)),
-				partMass);
-	}
-
-	 return points;
-};
+// Particle mass
+const double stellarParticleMass = 1e4 * intUnits.from_Msun;
+const double gasParticleMass = 1e4 * intUnits.from_Msun;
+const double dmParticleMass = 1e5 * intUnits.from_Msun;
 
 
 // used for outputting the velocity distribution (the value is read from the ini file)
@@ -504,6 +240,7 @@ void printoutInfo(const galaxymodel::SelfConsistentModel& model, const std::stri
 	// writeRotationCurve("rotcurve_"+iteration, potentials);
 }
 
+
 /// perform one iteration of the model
 void doIteration(galaxymodel::SelfConsistentModel& model, GasDisk& gasDisk, int iterationIndex)
 {
@@ -532,71 +269,11 @@ void doIteration(galaxymodel::SelfConsistentModel& model, GasDisk& gasDisk, int 
 }
 
 
-/// Selection function for the local box area
-class SelectionFunctionLocalBox: public galaxymodel::BaseSelectionFunction {
-	public:
-		SelectionFunctionLocalBox(const std::vector<double>& lower_pos, const std::vector<double>& upper_pos):
-			lower_pos(lower_pos), upper_pos(upper_pos) {};
-
-		virtual double value(const coord::PosVelCar& point) const { 
-			if (contains(point)) {return 1.;}
-			else {return 0.;}
-		}
-
-	private:
-		const std::vector<double> lower_pos, upper_pos;;
-
-		virtual bool contains(const coord::PosVelCar &point) const {
-			return point.x >= lower_pos[0] && point.x <= upper_pos[0] &&
-				point.y >= lower_pos[1] && point.y <= upper_pos[1] &&
-				point.z >= lower_pos[2] && point.z <= upper_pos[2];
-		}
-
-};
-
-
-/// sample particles from self-consistent model 
-particles::ParticleArrayCar sampleParticles(
-		const galaxymodel::GalaxyModel model, const double partMass,
-		const double lower_pos[], const double upper_pos[]) {
-	particles::ParticleArrayCar	points;
-		points = samplePosVelCar(model, partMass, lower_pos, upper_pos);
-
-	return points;
-}
-
-
-/// sample particles from the gas disk density component and assign velocities
-particles::ParticleArrayCar sampleParticles(
-		const PtrDensity& ptrDens, const PtrPotential& totalPot, const GasDisk& gasDisk,
-		const double partMass,
-		const double lower_pos[], const double upper_pos[]) {
-
-	//double totalMass = boxMass(ptrDens, lower_pos, upper_pos);
-	//particles::ParticleArrayCar points;
-	//if (totalMass < partMass) {
-	//	return particles::ParticleArrayCar();
-	//}
-
-	//size_t numPoints = (size_t)(totalMass / partMass);
-	particles::ParticleArrayCar	points = sampleDensityCar(ptrDens, partMass, lower_pos, upper_pos);
-
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
-#endif
-	for (size_t i = 0; i < points.size(); i++) {
-		gasDisk.computeVelocity(points[i].first, totalPot);
-		points[i].second = partMass;
-	}
-
-	return points;
-}
-
-
 int main()
 {
-	// read parameters from the INI file
-	const std::string iniFileName = "../data/SCM.ini";
+	//////////////////// READ INI FILE //////////////////// 
+	
+	const std::string iniFileName = "SCM.ini";
 	utils::ConfigFile ini(iniFileName);
 	utils::KeyValueMap
 		iniPotenThinDisk = ini.findSection("Potential thin disk"),
@@ -634,6 +311,9 @@ int main()
 	model.sizeVerticalCyl = iniSCM.getInt("sizeVerticalCyl");
 	model.useActionInterpolation = iniSCM.getBool("useActionInterpolation");
 
+
+	//////////////////// INITIALIZE THE MODEL ////////////////////
+	
 	// initialize density profiles of various components
 	std::vector<PtrDensity> densityStellarDisk(2);
 	PtrDensity densityBulge    = potential::createDensity(iniPotenBulge,    extUnits);
@@ -713,8 +393,8 @@ int main()
 			iniPotenGasDisk.getDouble("scaleRadius") * extUnits.lengthUnit,
 			iniGasParams.getDouble("Temperature"));
 
-	// do a few more iterations to obtain the self-consistent density profile for both disks
-	for(int iteration=1; iteration<=5; iteration++){
+	//////////////////// PERFORM ITERATIONS ////////////////////
+	for(int iteration=1; iteration<=6; iteration++){
 		doIteration(model, gasDisk, iteration);
 	}
 
@@ -724,7 +404,10 @@ int main()
 	printoutInfo(model, "Final");
 
 
-	std::ifstream inputFile("../data/DomainCoord128.txt");
+	//////////////////// SAMPLE PARTICLES ////////////////////
+
+	// read in domain coordinates
+	std::ifstream inputFile("DomainCoord128.txt");
 	std::vector<std::vector<double>> domain_data;
 	std::string line;
 	while (getline(inputFile, line)) {
@@ -740,14 +423,10 @@ int main()
 	}
 	inputFile.close();
 
-	const double stellarParticleMass = 1e4 * intUnits.from_Msun;
-	const double gasParticleMass = 1e4 * intUnits.from_Msun;
-	const double dmParticleMass = 1e5 * intUnits.from_Msun;
-
 //#ifdef _OPENMP
 //#pragma omp parallel for schedule(dynamic)
 //#endif
-for (int idx =8; idx < domain_data.size(); idx++) {
+for (int idx =0; idx < domain_data.size(); idx++) {
 	auto row = domain_data[idx];
 	//for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
 	std::vector<double> lower_pos = {row[0] * extUnits.lengthUnit, row[2] * extUnits.lengthUnit, row[4] * extUnits.lengthUnit};
@@ -757,51 +436,49 @@ for (int idx =8; idx < domain_data.size(); idx++) {
 	double massBulge = boxMass(model.components[1]->getDensity(), lower_pos.data(), upper_pos.data());
 	double massDM = boxMass(model.components[2]->getDensity(), lower_pos.data(), upper_pos.data());
 
-	galaxymodel::GalaxyModel bulge(*model.totalPotential, *model.actionFinder, *dfBulge);
-	galaxymodel::GalaxyModel thinDisk(*model.totalPotential, *model.actionFinder, *dfThin);
-	galaxymodel::GalaxyModel thickDisk(*model.totalPotential, *model.actionFinder, *dfThick);
-	galaxymodel::GalaxyModel stellarHalo(*model.totalPotential, *model.actionFinder, *dfStellarHalo);
+	//galaxymodel::GalaxyModel thinDisk(*model.totalPotential, *model.actionFinder, *dfThin);
+	//galaxymodel::GalaxyModel thickDisk(*model.totalPotential, *model.actionFinder, *dfThick);
+	//galaxymodel::GalaxyModel stellarHalo(*model.totalPotential, *model.actionFinder, *dfStellarHalo);
 	galaxymodel::GalaxyModel stellar(*model.totalPotential, *model.actionFinder, *dfStellar);
+	galaxymodel::GalaxyModel bulge(*model.totalPotential, *model.actionFinder, *dfBulge);
 	galaxymodel::GalaxyModel dmHalo(*model.totalPotential, *model.actionFinder, *dfHalo);
 	PtrDensity ptrDensGasDisk = gasDisk.createDensity(model.totalPotential);
 
 	particles::ParticleArrayCar thinDiskParticles, thickDiskParticles, stellarHaloParticles, stellarParticles, bulgeParticles, dmHaloParticles, gasDiskParticles;
 
-//	std::cout << "## ID " << idx << std::endl;
-//	if (1) {
-//		//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
-//		//std::cout << "Thin disk" << std::endl;
-//		thickDiskParticles = sampleParticles(thickDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
-//		std::cout << "Thick disk" << std::endl;
-//		stellarHaloParticles = sampleParticles(stellarHalo, stellarParticleMass, lower_pos.data(), upper_pos.data());
-//		std::cout << "Stellar Halo" << std::endl;
-//		stellarParticles = sampleParticles(stellar, stellarParticleMass, lower_pos.data(), upper_pos.data());
-//		std::cout << "Stellar all" << std::endl;
-//		std::cout << massStellarDiskHalo * intUnits.to_Msun << " " << stellarParticles.totalMass() * intUnits.to_Msun << std::endl;
-//	} 	
-//
-//	if(massBulge > stellarParticleMass) {
-//		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
-//		std::cout << "Bulge" << std::endl;
-//		std::cout << massBulge * intUnits.to_Msun << " " << bulgeParticles.totalMass() * intUnits.to_Msun << std::endl;
-//	}
-//	if (1) {
-//		dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
-//		std::cout << "DM" << std::endl;
-//		std::cout << massDM * intUnits.to_Msun << " " << dmHaloParticles.totalMass() * intUnits.to_Msun << std::endl;
-//	}
-	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
-		std::cout << "Gas" << std::endl;
-	double massGas = boxMass(ptrDensGasDisk, lower_pos.data(), upper_pos.data());
-		std::cout << massGas * intUnits.to_Msun << " " << gasDiskParticles.totalMass() * intUnits.to_Msun << std::endl;
+	// Sample stellar (thin disk, thick disk, and stellar halo) particles
+	//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	//thickDiskParticles = sampleParticles(thickDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	//stellarHaloParticles = sampleParticles(stellarHalo, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	stellarParticles = sampleParticles(stellar, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	
+	// Sample  bulge particles
+	if(massBulge > stellarParticleMass) {
+		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	}
 
-	particles::writeSnapshot("model_thinDisk_test"+std::to_string(idx), thinDiskParticles, "text", extUnits);
-	particles::writeSnapshot("model_thickDisk_test"+std::to_string(idx), thickDiskParticles, "text", extUnits);
-	particles::writeSnapshot("model_stellarHalo_test"+std::to_string(idx), stellarHaloParticles, "text", extUnits);
-	particles::writeSnapshot("model_bulge_test"+std::to_string(idx), bulgeParticles, "text", extUnits);
-	particles::writeSnapshot("model_dmHalo_test"+std::to_string(idx), dmHaloParticles, "text", extUnits);
-	particles::writeSnapshot("model_gasDisk_test"+std::to_string(idx), gasDiskParticles, "text", extUnits);
-	particles::writeSnapshot("model_stellar_test"+std::to_string(idx), stellarParticles, "text", extUnits);
+	// Sample DM halo particles
+	dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
+
+	// Sample gas disk particles
+	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
+
+	std::cout << "########## DOMAIN " << idx << " ##########" << std::endl;
+	std::cout << "  Stellar Disk + Stellar Halo: " << stellarParticles.size() << " particles (";
+	std::cout << stellarParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	std::cout << "  Bulge: " << bulgeParticles.size() << " particles (";
+	std::cout << bulgeParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	std::cout << "  DM Halo: " << dmHaloParticles.size() << " particles (";
+	std::cout << dmHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	std::cout << "  Gas Disk: " << gasDiskParticles.size() << " particles (";
+	std::cout << gasDiskParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	
+
+	// Write particles to file in ascii format if needed
+	//particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
+	//particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
+	//particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
+	//particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
 }
 
 return 0;
