@@ -209,13 +209,13 @@ double boxMass(const PtrDensity ptrDens, const double lower[], const double uppe
 
 
 /// sample particles from a density component within a given box
-particles::ParticleArrayCar sampleDensityCar(const PtrDensity ptrDens, const size_t numPoints,
+particles::ParticleArrayCar sampleDensityCar(const PtrDensity ptrDens, const double partMass,
   const double lower[], const double upper[]) {
 	 math::Matrix<double> result;
 	 double totalMass, errorMass;
 	 
 	 try{
-		 math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, numPoints, result, NULL, &totalMass, &errorMass);
+		 math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, 1e6, result, NULL, &totalMass, &errorMass);
 	 } catch (const std::runtime_error& e) {
 		 if (std::string(e.what()) == "sampleNdim: function is identically zero inside the region" ||
 				 std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
@@ -231,12 +231,23 @@ particles::ParticleArrayCar sampleDensityCar(const PtrDensity ptrDens, const siz
 		 std::exit(EXIT_FAILURE);  
 	 }
 
-	 const double pointMass = totalMass / result.rows();
-	 particles::ParticleArray<coord::PosVelCar> points;
-	 for(size_t i=0; i<result.rows(); i++) {
-		 points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0, 0, 0), pointMass);
-	 }
+	 //const double pointMass = totalMass / result.rows();
+	 //particles::ParticleArray<coord::PosVelCar> points;
+	 //for(size_t i=0; i<result.rows(); i++) {
+	 //  points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0, 0, 0), pointMass);
+	 //}
+	 
+	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
 
+	size_t numPoints = (size_t)(totalMass / partMass);
+	if (numPoints > result.rows()) {
+		 math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, numPoints, result, NULL, &totalMass, &errorMass);
+	}
+	particles::ParticleArray<coord::PosVelCar> points;
+	for(size_t i=0; i<numPoints; i++) {
+		points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0., 0., 0.),
+				partMass);
+	}
 	 return points;
 };
 
@@ -561,14 +572,14 @@ particles::ParticleArrayCar sampleParticles(
 		const double partMass,
 		const double lower_pos[], const double upper_pos[]) {
 
-	double totalMass = boxMass(ptrDens, lower_pos, upper_pos);
-	particles::ParticleArrayCar points;
-	if (totalMass < partMass) {
-		return particles::ParticleArrayCar();
-	}
+	//double totalMass = boxMass(ptrDens, lower_pos, upper_pos);
+	//particles::ParticleArrayCar points;
+	//if (totalMass < partMass) {
+	//	return particles::ParticleArrayCar();
+	//}
 
-	size_t numPoints = (size_t)(totalMass / partMass);
-	points = sampleDensityCar(ptrDens, numPoints, lower_pos, upper_pos);
+	//size_t numPoints = (size_t)(totalMass / partMass);
+	particles::ParticleArrayCar	points = sampleDensityCar(ptrDens, partMass, lower_pos, upper_pos);
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic)
@@ -736,7 +747,7 @@ int main()
 //#ifdef _OPENMP
 //#pragma omp parallel for schedule(dynamic)
 //#endif
-for (int idx =0; idx < domain_data.size(); idx++) {
+for (int idx =8; idx < domain_data.size(); idx++) {
 	auto row = domain_data[idx];
 	//for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
 	std::vector<double> lower_pos = {row[0] * extUnits.lengthUnit, row[2] * extUnits.lengthUnit, row[4] * extUnits.lengthUnit};
@@ -756,28 +767,33 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 
 	particles::ParticleArrayCar thinDiskParticles, thickDiskParticles, stellarHaloParticles, stellarParticles, bulgeParticles, dmHaloParticles, gasDiskParticles;
 
-	std::cout << "## ID " << idx << std::endl;
-	if (1) {
-		//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
-		//std::cout << "Thin disk" << std::endl;
-		thickDiskParticles = sampleParticles(thickDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
-		std::cout << "Thick disk" << std::endl;
-		stellarHaloParticles = sampleParticles(stellarHalo, stellarParticleMass, lower_pos.data(), upper_pos.data());
-		std::cout << "Stellar Halo" << std::endl;
-		stellarParticles = sampleParticles(stellar, stellarParticleMass, lower_pos.data(), upper_pos.data());
-		std::cout << "Stellar all" << std::endl;
-	} 	
-
-	if(massBulge > stellarParticleMass) {
-		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
-		std::cout << "Bulge" << std::endl;
-	}
-	if (1) {
-		dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
-		std::cout << "DM" << std::endl;
-	}
+//	std::cout << "## ID " << idx << std::endl;
+//	if (1) {
+//		//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+//		//std::cout << "Thin disk" << std::endl;
+//		thickDiskParticles = sampleParticles(thickDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+//		std::cout << "Thick disk" << std::endl;
+//		stellarHaloParticles = sampleParticles(stellarHalo, stellarParticleMass, lower_pos.data(), upper_pos.data());
+//		std::cout << "Stellar Halo" << std::endl;
+//		stellarParticles = sampleParticles(stellar, stellarParticleMass, lower_pos.data(), upper_pos.data());
+//		std::cout << "Stellar all" << std::endl;
+//		std::cout << massStellarDiskHalo * intUnits.to_Msun << " " << stellarParticles.totalMass() * intUnits.to_Msun << std::endl;
+//	} 	
+//
+//	if(massBulge > stellarParticleMass) {
+//		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
+//		std::cout << "Bulge" << std::endl;
+//		std::cout << massBulge * intUnits.to_Msun << " " << bulgeParticles.totalMass() * intUnits.to_Msun << std::endl;
+//	}
+//	if (1) {
+//		dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
+//		std::cout << "DM" << std::endl;
+//		std::cout << massDM * intUnits.to_Msun << " " << dmHaloParticles.totalMass() * intUnits.to_Msun << std::endl;
+//	}
 	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
 		std::cout << "Gas" << std::endl;
+	double massGas = boxMass(ptrDensGasDisk, lower_pos.data(), upper_pos.data());
+		std::cout << massGas * intUnits.to_Msun << " " << gasDiskParticles.totalMass() * intUnits.to_Msun << std::endl;
 
 	particles::writeSnapshot("model_thinDisk_test"+std::to_string(idx), thinDiskParticles, "text", extUnits);
 	particles::writeSnapshot("model_thickDisk_test"+std::to_string(idx), thickDiskParticles, "text", extUnits);
