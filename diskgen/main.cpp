@@ -182,10 +182,11 @@ class DensityIntegrandCar : public math:: IFunctionNdim {
 
 /// compute the mass of a density component within a given box
 double boxMass(const PtrDensity ptrDens, const double lower[], const double upper[]) {
-	double mass = 0;
+	double mass, massErr;
+	int numEval;
 	math::integrateNdim(DensityIntegrandCar(*ptrDens),
-			lower, upper, 1e-4, 1e6, &mass);
-	return mass;
+			lower, upper, 1e-4, 1e6, &mass, &massErr, &numEval);
+	return mass + massErr;
 }
 
 
@@ -271,7 +272,6 @@ particles::ParticleArrayCar samplePosVelCar(const galaxymodel::GalaxyModel model
 		std::exit(EXIT_FAILURE);  
 	}
 
-	std::cout << totalMass * intUnits.to_Msun<< std::endl;
 	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
 
 	size_t numPoints = (size_t)(totalMass / partMass);
@@ -715,11 +715,12 @@ int main()
 	const double gasParticleMass = 1e4 * intUnits.from_Msun;
 	const double dmParticleMass = 1e5 * intUnits.from_Msun;
 
-//#ifdef _OPENMP
-//#pragma omp parallel for schedule(dynamic)
-//#endif
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
 for (int idx =0; idx < domain_data.size(); idx++) {
 	auto row = domain_data[idx];
+	for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
 	std::vector<double> lower_pos = {row[0] * extUnits.lengthUnit, row[2] * extUnits.lengthUnit, row[4] * extUnits.lengthUnit};
 	std::vector<double> upper_pos = {row[1] * extUnits.lengthUnit, row[3] * extUnits.lengthUnit, row[5] * extUnits.lengthUnit};
 
@@ -745,6 +746,9 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 		thickDiskParticles = particles::ParticleArrayCar();
 		stellarHaloParticles = particles::ParticleArrayCar();
 	}
+	std::cout << idx << " ";
+	std::cout << massStellarDiskHalo * intUnits.to_Msun << " ";
+	std::cout << (thinDiskParticles.totalMass() + thickDiskParticles.totalMass() + stellarHaloParticles.totalMass())*intUnits.to_Msun << std::endl;
 
 	if(massBulge > stellarParticleMass) {
 		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());

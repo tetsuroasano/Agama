@@ -12,7 +12,6 @@
 #else
 #include <malloc.h>
 #endif
-#include <iostream>
 
 /// choose between pseudo-random (PRNG) and quasi-random (QRNG) number generators:
 /// the latter is generally preferred, but can be disabled if necessary (e.g. in Makefile.local)
@@ -549,9 +548,9 @@ void Sampler::processCell(CellEnum cellIndex)
     if(refineFactor < 1)
         return;
 
-    if(numPointsInCell > 2*minNumPointsInCell) 
+    if(numPointsInCell > 2*minNumPointsInCell)
         decideHowToSplitCell(cellIndex);
-    else 
+    else
         addCellToQueue(cellIndex);
 }
 
@@ -581,8 +580,8 @@ void Sampler::run()
         // The newly added cells (after splitting) are appended to the end of the cell list,
         // therefore the list is gradually growing, and this loop must be done sequentially.
         cellsQueue.clear();
-        for(CellEnum cellIndex=0; cellIndex < static_cast<CellEnum>(cells.size()); cellIndex++) 
-					processCell(cellIndex);
+        for(CellEnum cellIndex=0; cellIndex < static_cast<CellEnum>(cells.size()); cellIndex++)
+            processCell(cellIndex);
         assert(!cellsQueue.empty());
         // find out how many new samples do we need to add, and extend the relevant arrays
         PointEnum numPointsExisting = fncValues.size();
@@ -612,7 +611,6 @@ void Sampler::run()
     } while(++nIter < maxNumIter);
     throw std::runtime_error(
         "Error in sampleNdim: refinement procedure did not converge");
-
 }
 
 void Sampler::drawSamples(Matrix<double>& outputSamples) const
