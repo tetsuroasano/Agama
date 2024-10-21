@@ -186,7 +186,25 @@ double boxMass(const PtrDensity ptrDens, const double lower[], const double uppe
 	int numEval;
 	math::integrateNdim(DensityIntegrandCar(*ptrDens),
 			lower, upper, 1e-4, 1e6, &mass, &massErr, &numEval);
-	return mass + massErr;
+
+	//DensityIntegrandCar f(*ptrDens);
+	//double mass_tmp = 0;
+	//double dx = (upper[0] - lower[0]) / 100;
+	//double dy = (upper[1] - lower[1]) / 100;
+	//double dz = (upper[2] - lower[2]) / 100;
+
+	//for (double x = 0.5*dx + lower[0]; x <= upper[0]; x+=dx) {
+	//for (double y = 0.5*dy + lower[1]; y <= upper[1]; y+=dy) {
+	//for (double z = 0.5*dz + lower[2]; z <= upper[2]; z+=dz) {
+	//	double vars[] = {x, y, z};
+	//	double tmp;
+	//	f.eval(vars, &tmp);
+	//	mass_tmp += tmp *dx*dy*dz;
+	//}
+	//}
+	//}
+	//mass = fmax(mass, mass_tmp);
+	return mass;
 }
 
 
@@ -715,12 +733,12 @@ int main()
 	const double gasParticleMass = 1e4 * intUnits.from_Msun;
 	const double dmParticleMass = 1e5 * intUnits.from_Msun;
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
-#endif
+//#ifdef _OPENMP
+//#pragma omp parallel for schedule(dynamic)
+//#endif
 for (int idx =0; idx < domain_data.size(); idx++) {
 	auto row = domain_data[idx];
-	for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
+	//for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
 	std::vector<double> lower_pos = {row[0] * extUnits.lengthUnit, row[2] * extUnits.lengthUnit, row[4] * extUnits.lengthUnit};
 	std::vector<double> upper_pos = {row[1] * extUnits.lengthUnit, row[3] * extUnits.lengthUnit, row[5] * extUnits.lengthUnit};
 
@@ -732,37 +750,34 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	galaxymodel::GalaxyModel thinDisk(*model.totalPotential, *model.actionFinder, *dfThin);
 	galaxymodel::GalaxyModel thickDisk(*model.totalPotential, *model.actionFinder, *dfThick);
 	galaxymodel::GalaxyModel stellarHalo(*model.totalPotential, *model.actionFinder, *dfStellarHalo);
+	galaxymodel::GalaxyModel stellar(*model.totalPotential, *model.actionFinder, *dfStellar);
 	galaxymodel::GalaxyModel dmHalo(*model.totalPotential, *model.actionFinder, *dfHalo);
 	PtrDensity ptrDensGasDisk = gasDisk.createDensity(model.totalPotential);
 
-	particles::ParticleArrayCar thinDiskParticles, thickDiskParticles, stellarHaloParticles, bulgeParticles, dmHaloParticles, gasDiskParticles;
+	particles::ParticleArrayCar thinDiskParticles, thickDiskParticles, stellarHaloParticles, stellarParticles, bulgeParticles, dmHaloParticles, gasDiskParticles;
 
-	if (massStellarDiskHalo > stellarParticleMass) {
-		thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	std::cout << "## ID " << idx << std::endl;
+	if (1) {
+		//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+		//std::cout << "Thin disk" << std::endl;
 		thickDiskParticles = sampleParticles(thickDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
+		std::cout << "Thick disk" << std::endl;
 		stellarHaloParticles = sampleParticles(stellarHalo, stellarParticleMass, lower_pos.data(), upper_pos.data());
-	} else {
-		thinDiskParticles = particles::ParticleArrayCar();
-		thickDiskParticles = particles::ParticleArrayCar();
-		stellarHaloParticles = particles::ParticleArrayCar();
-	}
-	std::cout << idx << " ";
-	std::cout << massStellarDiskHalo * intUnits.to_Msun << " ";
-	std::cout << (thinDiskParticles.totalMass() + thickDiskParticles.totalMass() + stellarHaloParticles.totalMass())*intUnits.to_Msun << std::endl;
+		std::cout << "Stellar Halo" << std::endl;
+		stellarParticles = sampleParticles(stellar, stellarParticleMass, lower_pos.data(), upper_pos.data());
+		std::cout << "Stellar all" << std::endl;
+	} 	
 
 	if(massBulge > stellarParticleMass) {
 		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
-	} else {
-		bulgeParticles = particles::ParticleArrayCar();
+		std::cout << "Bulge" << std::endl;
 	}
-
-	if (massDM > dmParticleMass) {
+	if (1) {
 		dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
-	} else {
-		dmHaloParticles = particles::ParticleArrayCar();
+		std::cout << "DM" << std::endl;
 	}
-
 	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
+		std::cout << "Gas" << std::endl;
 
 	particles::writeSnapshot("model_thinDisk_test"+std::to_string(idx), thinDiskParticles, "text", extUnits);
 	particles::writeSnapshot("model_thickDisk_test"+std::to_string(idx), thickDiskParticles, "text", extUnits);
@@ -770,6 +785,7 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	particles::writeSnapshot("model_bulge_test"+std::to_string(idx), bulgeParticles, "text", extUnits);
 	particles::writeSnapshot("model_dmHalo_test"+std::to_string(idx), dmHaloParticles, "text", extUnits);
 	particles::writeSnapshot("model_gasDisk_test"+std::to_string(idx), gasDiskParticles, "text", extUnits);
+	particles::writeSnapshot("model_stellar_test"+std::to_string(idx), stellarParticles, "text", extUnits);
 }
 
 return 0;
