@@ -144,6 +144,8 @@ math::Matrix<double> sampleDensityCar(const PtrDensity ptrDens, const size_t num
 				std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
 			 ) {
 			std::cerr << "Caught specific runtime error: " << e.what() << std::endl;
+			*totalMass = 0.;
+			*errorMass = 0.;
 			return math::Matrix<double>();
 		} else {
 			std::cerr << "Unexpected runtime error: " << e.what() << std::endl;
@@ -173,6 +175,8 @@ math::Matrix<double> samplePosVelCar(const galaxymodel::GalaxyModel model, const
 				std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
 			 ) {
 			std::cerr << "Caught specific runtime error: " << e.what() << std::endl;
+			*totalMass = 0.;
+			*errorMass = 0.;
 			return math::Matrix<double>();
 		} else {
 			std::cerr << "Unexpected runtime error: " << e.what() << std::endl;

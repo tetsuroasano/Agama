@@ -412,7 +412,7 @@ int main()
 
 	// read in domain coordinates
 	std::ifstream inputFile("DomainCoord128.txt");
-	std::vector<std::vector<double>> domain_data;
+	std::vector<std::vector<double> > domain_data;
 	std::string line;
 	while (getline(inputFile, line)) {
 		std::istringstream iss(line);
