@@ -291,7 +291,9 @@ int main()
 		iniSCMBulge      = ini.findSection("SelfConsistentModel bulge"),
 		iniSCMHalo       = ini.findSection("SelfConsistentModel halo"),
 		iniSCM           = ini.findSection("SelfConsistentModel"),
-	  iniGasParams     = ini.findSection("Gas parameters");
+	  iniGasParams     = ini.findSection("Gas parameters"),
+		iniPotenGasHalo  = ini.findSection("Potential gas halo"),
+		iniDFGasHalo     = ini.findSection("DF gas halo");
 	if(!iniSCM.contains("rminSph")) {  // most likely file doesn't exist
 		std::cout << "Invalid INI file " << iniFileName << "\n";
 		return -1;
@@ -322,6 +324,7 @@ int main()
 	densityStellarDisk[0]      = potential::createDensity(iniPotenThinDisk, extUnits);
 	densityStellarDisk[1]      = potential::createDensity(iniPotenThickDisk,extUnits);
 	PtrDensity densityGasDisk  = potential::createDensity(iniPotenGasDisk,  extUnits);
+	PtrDensity densityGasHalo  = potential::createDensity(iniPotenGasHalo,  extUnits);
 
 
 	// add components to SCM - at first, all of them are static density profiles
@@ -334,6 +337,8 @@ int main()
 				new galaxymodel::ComponentStatic(densityDarkHalo, false)));
 	model.components.push_back(galaxymodel::PtrComponent(
 				new galaxymodel::ComponentStatic(densityGasDisk, true)));
+	model.components.push_back(galaxymodel::PtrComponent(
+				new galaxymodel::ComponentStatic(densityGasHalo, false)));
 
 	// initialize total potential of the model (first guess)
 	updateTotalPotential(model);
@@ -343,7 +348,8 @@ int main()
 		"Mdisk="  << (model.components[0]->getDensity()->totalMass() * intUnits.to_Msun) << " Msun, "
 		"Mbulge=" << (densityBulge   ->totalMass() * intUnits.to_Msun) << " Msun, "
 		"Mhalo="  << (densityDarkHalo->totalMass() * intUnits.to_Msun) << " Msun, "
-		"Mgas="   << (densityGasDisk ->totalMass() * intUnits.to_Msun) << " Msun\n";
+		"Mgasdisk="   << (densityGasDisk ->totalMass() * intUnits.to_Msun) << " Msun, "
+		"Mgashalo="   << (densityGasHalo ->totalMass() * intUnits.to_Msun) << " Msun, ";
 
 	// create the dark halo DF
 	df::PtrDistributionFunction dfHalo = df::createDistributionFunction(
@@ -360,6 +366,8 @@ int main()
 			iniDFStellarHalo, model.totalPotential.get(), NULL, extUnits);
 	std::vector<df::PtrDistributionFunction> dfStellarArray = {dfThin, dfThick, dfStellarHalo};
 	df::PtrDistributionFunction dfStellar(new df::CompositeDF(dfStellarArray));
+	df::PtrDistributionFunction dfGasHalo = df::createDistributionFunction(
+			iniDFGasHalo, model.totalPotential.get(), /*density not needed*/NULL, extUnits);
 
 	// replace the static disk density component of SCM with a DF-based disk component
 	model.components[0] = galaxymodel::PtrComponent(
@@ -393,6 +401,16 @@ int main()
 			iniPotenGasDisk.getDouble("surfaceDensity") * intUnits.from_Msun_per_Kpc2,
 			iniPotenGasDisk.getDouble("scaleRadius") * extUnits.lengthUnit,
 			iniGasParams.getDouble("Temperature"));
+
+	// DF for the gas halo
+	model.components[4] = galaxymodel::PtrComponent(
+			new galaxymodel::ComponentWithSpheroidalDF(dfGasHalo, potential::PtrDensity(),
+				iniSCMHalo.getInt("lmaxAngularSph"),
+				iniSCMHalo.getInt("mmaxAngularSph"),
+				iniSCMHalo.getInt("sizeRadialSph"),
+				iniSCMHalo.getDouble("rminSph") * extUnits.lengthUnit,
+				iniSCMHalo.getDouble("rmaxSph") * extUnits.lengthUnit));
+
 
 	//////////////////// PERFORM ITERATIONS ////////////////////
 	for(int iteration=1; iteration<=6; iteration++){
@@ -444,8 +462,9 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	galaxymodel::GalaxyModel bulge(*model.totalPotential, *model.actionFinder, *dfBulge);
 	galaxymodel::GalaxyModel dmHalo(*model.totalPotential, *model.actionFinder, *dfHalo);
 	PtrDensity ptrDensGasDisk = gasDisk.createDensity(model.totalPotential);
+	galaxymodel::GalaxyModel gasHalo(*model.totalPotential, *model.actionFinder, *dfGasHalo);
 
-	particles::ParticleArrayCar thinDiskParticles, thickDiskParticles, stellarHaloParticles, stellarParticles, bulgeParticles, dmHaloParticles, gasDiskParticles;
+	particles::ParticleArrayCar thinDiskParticles, thickDiskParticles, stellarHaloParticles, stellarParticles, bulgeParticles, dmHaloParticles, gasDiskParticles, gasHaloParticles;
 
 	// Sample stellar (thin disk, thick disk, and stellar halo) particles
 	//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
@@ -464,6 +483,9 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	// Sample gas disk particles
 	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
 
+	// Sample gas halo particles
+	gasHaloParticles = sampleParticles(gasHalo, gasParticleMass, lower_pos.data(), upper_pos.data());
+
 	std::cout << "########## DOMAIN " << idx << " ##########" << std::endl;
 	std::cout << "  Stellar Disk + Stellar Halo: " << stellarParticles.size() << " particles (";
 	std::cout << stellarParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
@@ -473,7 +495,9 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	std::cout << dmHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
 	std::cout << "  Gas Disk: " << gasDiskParticles.size() << " particles (";
 	std::cout << gasDiskParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
-	std::cout << " Total: " << stellarParticles.size() + bulgeParticles.size() + dmHaloParticles.size() + gasDiskParticles.size() << " particles ";
+	std::cout << "  Gas Halo: " << gasHaloParticles.size() << " particles (";
+	std::cout << gasHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	std::cout << " Total: " << stellarParticles.size() + bulgeParticles.size() + dmHaloParticles.size() + gasDiskParticles.size() + gasHaloParticles.size() << " particles ";
 	std::cout << std::endl;
 
 	// How to access the particle data
