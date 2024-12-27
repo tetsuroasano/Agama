@@ -25,9 +25,13 @@ else()
 endif()
 
 # 共通のヘッダディレクトリ
-set(COMMON_INCLUDES ${CMAKE_SOURCE_DIR}/../src)
+set(COMMON_INCLUDES ${CMAKE_SOURCE_DIR}/../src  ${CMAKE_SOURCE_DIR}/../extras/include)
 
-set(EXTRA_LIBS ${CMAKE_SOURCE_DIR}/../extras/lib/libnemo.a ${CMAKE_SOURCE_DIR}/../extras/lib/libunsio.a)
+if(EXISTS ${CMAKE_SOURCE_DIR}/../extras/lib/libnemo.a)
+	set(EXTRA_LIBS ${CMAKE_SOURCE_DIR}/../extras/lib/libunsio.a ${CMAKE_SOURCE_DIR}/../extras/lib/libnemo.a)
+else()
+	set(EXTRA_LIBS "")
+endif()
 
 # ターゲットの作成
 add_executable(disk_gen main.cpp gas_scm.cpp)

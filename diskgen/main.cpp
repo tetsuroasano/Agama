@@ -213,7 +213,8 @@ void printoutInfo(const galaxymodel::SelfConsistentModel& model, const std::stri
 	const potential::BaseDensity& compDisk = *model.components[0]->getDensity();
 	const potential::BaseDensity& compBulge= *model.components[1]->getDensity();
 	const potential::BaseDensity& compHalo = *model.components[2]->getDensity();
-	const potential::BaseDensity& compGas  = *model.components[3]->getDensity();
+	const potential::BaseDensity& compGasDisk  = *model.components[3]->getDensity();
+	const potential::BaseDensity& compGasHalo  = *model.components[4]->getDensity();
 	coord::PosCyl pt0(solarRadius * intUnits.from_Kpc, 0, 0);
 	coord::PosCyl pt1(solarRadius * intUnits.from_Kpc, 1 * intUnits.from_Kpc, 0);
 	std::cout <<
@@ -224,9 +225,12 @@ void printoutInfo(const galaxymodel::SelfConsistentModel& model, const std::stri
 		"Halo total mass="      << (compHalo.totalMass()  * intUnits.to_Msun) << " Msun"
 		", rho(Rsolar,z=0)="    << (compHalo.density(pt0) * intUnits.to_Msun_per_pc3) <<
 		", rho(Rsolar,z=1kpc)=" << (compHalo.density(pt1) * intUnits.to_Msun_per_pc3) << " Msun/pc^3\n"
-		"Gas total mass="       << (compGas.totalMass()  * intUnits.to_Msun) << " Msun"
-		", rho(Rsolar,z=0)="    << (compGas.density(pt0) * intUnits.to_Msun_per_pc3) <<
-		", rho(Rsolar,z=1kpc)=" << (compGas.density(pt1) * intUnits.to_Msun_per_pc3) << " Msun/pc^3\n"
+		"Gas Disk total mass="  << (compGasDisk.totalMass()  * intUnits.to_Msun) << " Msun"
+		", rho(Rsolar,z=0)="    << (compGasDisk.density(pt0) * intUnits.to_Msun_per_pc3) <<
+		", rho(Rsolar,z=1kpc)=" << (compGasDisk.density(pt1) * intUnits.to_Msun_per_pc3) << " Msun/pc^3\n"
+		"Gas Halo total mass="  << (compGasHalo.totalMass()  * intUnits.to_Msun) << " Msun"
+		", rho(Rsolar,z=0)="    << (compGasHalo.density(pt0) * intUnits.to_Msun_per_pc3) <<
+		", rho(Rsolar,z=1kpc)=" << (compGasHalo.density(pt1) * intUnits.to_Msun_per_pc3) << " Msun/pc^3\n"
 		"Potential at origin=-("<<
 		(sqrt(-model.totalPotential->value(coord::PosCyl(0,0,0))) * intUnits.to_kms) << " km/s)^2"
 		", total mass=" << (model.totalPotential->totalMass() * intUnits.to_Msun) << " Msun\n";
@@ -526,6 +530,7 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	//particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
 	//particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
 	//particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
+	//particles::writeSnapshot("model_gasHalo_"+std::to_string(idx), gasHaloParticles, "text", extUnits);
 }
 
 return 0;
