@@ -279,6 +279,7 @@ int main()
 	//////////////////// READ INI FILE //////////////////// 
 	
 	const std::string iniFileName = "SCM.ini";
+	//const std::string iniFileName = "SCM_small.ini";
 	utils::ConfigFile ini(iniFileName);
 	utils::KeyValueMap
 		iniPotenThinDisk = ini.findSection("Potential thin disk"),
