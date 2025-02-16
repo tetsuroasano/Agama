@@ -138,7 +138,8 @@ math::Matrix<double> sampleDensityCar(const PtrDensity ptrDens, const size_t num
 	math::Matrix<double> result;
 
 	try{
-		math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, numPoints, result, NULL, totalMass, errorMass);
+		size_t* numTrial = 0;
+		math::sampleNdim(DensityIntegrandCar(*ptrDens), lower, upper, numPoints, result, numTrial, totalMass, errorMass);
 	} catch (const std::runtime_error& e) {
 		if (std::string(e.what()) == "sampleNdim: function is identically zero inside the region" ||
 				std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
@@ -169,7 +170,8 @@ math::Matrix<double> samplePosVelCar(const galaxymodel::GalaxyModel model, const
 	math::Matrix<double> result;
 
 	try {
-		math::sampleNdim(DFIntegrandCar(model), lower, upper, numPoints, result, NULL, totalMass, errorMass);
+		size_t* numTrial = 0;
+		math::sampleNdim(DFIntegrandCar(model), lower, upper, numPoints, result, numTrial, totalMass, errorMass);
 	} catch (const std::runtime_error& e) {
 		if (std::string(e.what()) == "sampleNdim: function is identically zero inside the region" ||
 				std::string(e.what()) == "Error in sampleNdim: refinement procedure did not converge"
@@ -196,26 +198,33 @@ particles::ParticleArrayCar sampleParticles(
 		const galaxymodel::GalaxyModel model, const double partMass,
 		const double lower_pos[], const double upper_pos[]) {
 	double totalMass, errorMass;
-	math::Matrix<double> result;
+	math::Matrix<double> result, resultAdd;
 	particles::ParticleArrayCar	points;
 
 	// Sample 1M points to estimate the total mass
-	result =  samplePosVelCar(model, (int)1e6, lower_pos, upper_pos,  &totalMass, &errorMass);
+	const size_t numTmp = 1000000 ;
+	result =  samplePosVelCar(model, numTmp, lower_pos, upper_pos,  &totalMass, &errorMass);
 
 	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
 
 	// If we need more points, sample again
 	size_t numPoints = (size_t)(totalMass / partMass);
 	if (numPoints > result.rows()) {
-		result =  samplePosVelCar(model, numPoints, lower_pos, upper_pos,
+		resultAdd =  samplePosVelCar(model, numPoints-numTmp, lower_pos, upper_pos,
 				                      &totalMass, &errorMass);
 	}
 
-	for(size_t i=0; i<numPoints; i++) {
+	for(size_t i=0; i<std::min(numPoints, numTmp); i++) {
 		points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2),
 																result(i,3), result(i,4), result(i,5)),
 				                        partMass);
 	}
+	for(size_t i=0; i<resultAdd.rows(); i++) {
+		points.add(coord::PosVelCar(resultAdd(i,0), resultAdd(i,1), resultAdd(i,2),
+																resultAdd(i,3), resultAdd(i,4), resultAdd(i,5)),
+				                        partMass);
+	}
+
 
 	return points;
 }
@@ -227,23 +236,28 @@ particles::ParticleArrayCar sampleParticles(
 		const double partMass,
 		const double lower_pos[], const double upper_pos[]) {
 	double totalMass, errorMass;
-	math::Matrix<double> result;
+	math::Matrix<double> result, resultAdd;
 	particles::ParticleArrayCar	points;
 	 
 	// Sample 1M points to estimate the total mass
-	result =  sampleDensityCar(ptrDens, (int)1e6, lower_pos, upper_pos,  &totalMass, &errorMass);
+	const size_t numTmp = 1000000 ;
+	result =  sampleDensityCar(ptrDens, numTmp, lower_pos, upper_pos,  &totalMass, &errorMass);
 
 	if (totalMass < partMass) { return particles::ParticleArrayCar(); }
 
 	// If we need more points, sample again
 	size_t numPoints = (size_t)(totalMass / partMass);
 	if (numPoints > result.rows()) {
-		result =  sampleDensityCar(ptrDens, numPoints, lower_pos, upper_pos,
-				                       &totalMass, &errorMass);
+		resultAdd =  sampleDensityCar(ptrDens, numPoints-numTmp, lower_pos, upper_pos,
+				                       	  &totalMass, &errorMass);
 	}
 
-	for(size_t i=0; i<numPoints; i++) {
+	for(size_t i=0; i<std::min(numPoints, numTmp); i++) {
 		points.add(coord::PosVelCar(result(i,0), result(i,1), result(i,2), 0., 0., 0.),
+				       partMass);
+	}
+	for(size_t i=0; i<resultAdd.rows(); i++) {
+		points.add(coord::PosVelCar(resultAdd(i,0), resultAdd(i,1), resultAdd(i,2), 0., 0., 0.),
 				       partMass);
 	}
 	for(size_t i=0; i<numPoints; i++) {

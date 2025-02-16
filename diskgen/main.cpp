@@ -39,6 +39,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+#include <time.h>
 
 using potential::PtrDensity;
 using potential::PtrPotential;
@@ -50,9 +51,9 @@ const units::InternalUnits intUnits(1*units::Kpc, 977.7922216807891*units::Myr);
 const units::ExternalUnits extUnits(intUnits, 1.*units::Kpc, 1.*units::kms, 1.*units::Msun);
 
 // Particle mass
-const double stellarParticleMass = 1e4 * intUnits.from_Msun;
-const double gasParticleMass = 1e4 * intUnits.from_Msun;
-const double dmParticleMass = 1e5 * intUnits.from_Msun;
+const double stellarParticleMass = 1e1 * intUnits.from_Msun;
+const double gasParticleMass = 1e1 * intUnits.from_Msun;
+const double dmParticleMass = 1e2 * intUnits.from_Msun;
 
 
 // used for outputting the velocity distribution (the value is read from the ini file)
@@ -258,7 +259,7 @@ void doIteration(galaxymodel::SelfConsistentModel& model, GasDisk& gasDisk, int 
 						*gasDisk.createDensity(model.totalPotential),
 						/*mmax*/ 0,
 						/*gridSizeR*/ 100, /*Rmin*/ 0.01, /*Rmax*/ 50,
-						/*gridSizez*/ 100, /*zmin*/ 0.01, /*zmax*/ 20),
+						/*gridSizez*/ 50, /*zmin*/ 0.01, /*zmax*/ 10),
 					true));
 
 		/// update the N-body components
@@ -278,7 +279,7 @@ int main()
 {
 	//////////////////// READ INI FILE //////////////////// 
 	
-	const std::string iniFileName = "SCM.ini";
+	const std::string iniFileName = "SCM_large.ini";
 	//const std::string iniFileName = "SCM_small.ini";
 	utils::ConfigFile ini(iniFileName);
 	utils::KeyValueMap
@@ -354,7 +355,7 @@ int main()
 		"Mbulge=" << (densityBulge   ->totalMass() * intUnits.to_Msun) << " Msun, "
 		"Mhalo="  << (densityDarkHalo->totalMass() * intUnits.to_Msun) << " Msun, "
 		"Mgasdisk="   << (densityGasDisk ->totalMass() * intUnits.to_Msun) << " Msun, "
-		"Mgashalo="   << (densityGasHalo ->totalMass() * intUnits.to_Msun) << " Msun, ";
+		"Mgashalo="   << (densityGasHalo ->totalMass() * intUnits.to_Msun) << " Msun\n";
 
 	// create the dark halo DF
 	df::PtrDistributionFunction dfHalo = df::createDistributionFunction(
@@ -434,7 +435,8 @@ int main()
 	//////////////////// SAMPLE PARTICLES ////////////////////
 
 	// read in domain coordinates
-	std::ifstream inputFile("DomainCoord128.txt");
+	//std::ifstream inputFile("DomainCoord128.txt");
+	std::ifstream inputFile("DomainCoord1.txt");
 	std::vector<std::vector<double> > domain_data;
 	std::string line;
 	while (getline(inputFile, line)) {
@@ -451,6 +453,7 @@ int main()
 	inputFile.close();
 
 for (int idx =0; idx < domain_data.size(); idx++) {
+	std::cout << "########## DOMAIN " << idx << " ##########" << std::endl;
 	auto row = domain_data[idx];
 	//for (int i = 0; i <6; i++) row[i] = math::clip(row[i], -300., 300.);
 	std::vector<double> lower_pos = {row[0] * extUnits.lengthUnit, row[2] * extUnits.lengthUnit, row[4] * extUnits.lengthUnit};
@@ -475,33 +478,52 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	//thinDiskParticles = sampleParticles(thinDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
 	//thickDiskParticles = sampleParticles(thickDisk, stellarParticleMass, lower_pos.data(), upper_pos.data());
 	//stellarHaloParticles = sampleParticles(stellarHalo, stellarParticleMass, lower_pos.data(), upper_pos.data());
+	clock_t start = clock();
 	stellarParticles = sampleParticles(stellar, stellarParticleMass, lower_pos.data(), upper_pos.data());
-	
-	// Sample  bulge particles
-	if(massBulge > stellarParticleMass) {
-		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
-	}
-
-	// Sample DM halo particles
-	dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
-
-	// Sample gas disk particles
-	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
-
-	// Sample gas halo particles
-	gasHaloParticles = sampleParticles(gasHalo, gasParticleMass, lower_pos.data(), upper_pos.data());
-
-	std::cout << "########## DOMAIN " << idx << " ##########" << std::endl;
 	std::cout << "  Stellar Disk + Stellar Halo: " << stellarParticles.size() << " particles (";
 	std::cout << stellarParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	clock_t end = clock();
+	double time = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+	printf("time %lf[s]\n", time);
+
+	// Sample  bulge particles
+	if(massBulge > stellarParticleMass) {
+		start = clock();
+		bulgeParticles = sampleParticles(bulge, stellarParticleMass, lower_pos.data(), upper_pos.data());
+		end = clock();
+		time = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+	}
 	std::cout << "  Bulge: " << bulgeParticles.size() << " particles (";
 	std::cout << bulgeParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	printf("time %lf[s]\n", time);
+
+	// Sample DM halo particles
+	start = clock();
+	dmHaloParticles = sampleParticles(dmHalo, dmParticleMass, lower_pos.data(), upper_pos.data());
+	end = clock();
+	time = static_cast<double>(end - start) / CLOCKS_PER_SEC;
 	std::cout << "  DM Halo: " << dmHaloParticles.size() << " particles (";
 	std::cout << dmHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	printf("time %lf[s]\n", time);
+
+	// Sample gas disk particles
+	start = clock();
+	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
+	end = clock();
+	time = static_cast<double>(end - start) / CLOCKS_PER_SEC;
 	std::cout << "  Gas Disk: " << gasDiskParticles.size() << " particles (";
 	std::cout << gasDiskParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	printf("time %lf[s]\n", time);
+
+	// Sample gas halo particles
+	start = clock();
+	gasHaloParticles = sampleParticles(gasHalo, gasParticleMass, lower_pos.data(), upper_pos.data());
+	end = clock();
+	time = static_cast<double>(end - start) / CLOCKS_PER_SEC;
 	std::cout << "  Gas Halo: " << gasHaloParticles.size() << " particles (";
 	std::cout << gasHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
+	printf("time %lf[s]\n", time);
+
 	std::cout << " Total: " << stellarParticles.size() + bulgeParticles.size() + dmHaloParticles.size() + gasDiskParticles.size() + gasHaloParticles.size() << " particles ";
 	std::cout << std::endl;
 
@@ -524,7 +546,7 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 	//	<< std::setw(15) << stellarParticles[i].first.vz / extUnits.velocityUnit
 	//	<< std::setw(15) << stellarParticles[i].second / extUnits.massUnit << std::endl;
 	//}
-	
+
 
 	// Write particles to file in ascii format if needed
 	//particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);

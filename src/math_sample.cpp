@@ -25,7 +25,7 @@ namespace {  // internal namespace for Sampler class
 static const int maxInitSamples = 1048576;
 
 /// minimum allowed number of points in any cell
-static const int minNumPointsInCell = 256;
+static const int minNumPointsInCell = 128;
 
 /// number of bins in the 1-d histogram of function values (projection in each dimension) in each cell,
 /// used to estimate the entropy and ultimately decide the dimension to split a cell;
