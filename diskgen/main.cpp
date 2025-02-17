@@ -51,9 +51,9 @@ const units::InternalUnits intUnits(1*units::Kpc, 977.7922216807891*units::Myr);
 const units::ExternalUnits extUnits(intUnits, 1.*units::Kpc, 1.*units::kms, 1.*units::Msun);
 
 // Particle mass
-const double stellarParticleMass = 1e4 * intUnits.from_Msun;
-const double gasParticleMass = 1e4 * intUnits.from_Msun;
-const double dmParticleMass = 1e5 * intUnits.from_Msun;
+const double stellarParticleMass = 1e5 * intUnits.from_Msun;
+const double gasParticleMass = 1e5 * intUnits.from_Msun;
+const double dmParticleMass = 1e6 * intUnits.from_Msun;
 
 
 // used for outputting the velocity distribution (the value is read from the ini file)
@@ -281,9 +281,12 @@ void computeGasDensity(std::vector<double>& gasParticleDens, const particles::Pa
 	const potential::BaseDensity& compGasDisk  = *model.components[3]->getDensity();
 	const potential::BaseDensity& compGasHalo  = *model.components[4]->getDensity();
 
-	for (size_t i=0; i<particles.size(); i++) {
-		gasParticleDens[i] = compGasDisk.density(particles[i].first) * intUnits.to_Msun_per_Kpc3;
-		gasParticleDens[i] += compGasHalo.density(particles[i].first) * intUnits.to_Msun_per_Kpc3;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+	for (int i=0; i<particles.size(); i++) {
+		gasParticleDens[i] = compGasDisk.density(particles[i].first);
+		gasParticleDens[i] += compGasHalo.density(particles[i].first);
 	}
 }
 
@@ -515,6 +518,8 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 
 	// Sample gas halo particles
 	gasHaloParticles = sampleParticles(gasHalo, gasParticleMass, lower_pos.data(), upper_pos.data());
+	std::vector<double> gasHaloParticleDens(gasHaloParticles.size());
+	computeGasDensity(gasHaloParticleDens, gasHaloParticles, model);
 	std::cout << "  Gas Halo: " << gasHaloParticles.size() << " particles (";
 	std::cout << gasHaloParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
 
