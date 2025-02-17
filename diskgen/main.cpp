@@ -275,6 +275,19 @@ void doIteration(galaxymodel::SelfConsistentModel& model, GasDisk& gasDisk, int 
 }
 
 
+// compute gas density
+void computeGasDensity(std::vector<double>& gasParticleDens, const particles::ParticleArrayCar particles, const galaxymodel::SelfConsistentModel& model) 
+{
+	const potential::BaseDensity& compGasDisk  = *model.components[3]->getDensity();
+	const potential::BaseDensity& compGasHalo  = *model.components[4]->getDensity();
+
+	for (size_t i=0; i<particles.size(); i++) {
+		gasParticleDens[i] = compGasDisk.density(particles[i].first) * intUnits.to_Msun_per_Kpc3;
+		gasParticleDens[i] += compGasHalo.density(particles[i].first) * intUnits.to_Msun_per_Kpc3;
+	}
+}
+
+
 int main()
 {
 	//////////////////// READ INI FILE //////////////////// 
@@ -495,6 +508,8 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 
 	// Sample gas disk particles
 	gasDiskParticles = sampleParticles(ptrDensGasDisk, model.totalPotential, gasDisk, gasParticleMass, lower_pos.data(), upper_pos.data());
+	std::vector<double> gasDiskParticleDens(gasDiskParticles.size());
+	computeGasDensity(gasDiskParticleDens, gasDiskParticles, model);
 	std::cout << "  Gas Disk: " << gasDiskParticles.size() << " particles (";
 	std::cout << gasDiskParticles.totalMass() * intUnits.to_Msun << " Msun)" << std::endl;
 
