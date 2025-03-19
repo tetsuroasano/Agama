@@ -451,7 +451,7 @@ int main()
 	//////////////////// SAMPLE PARTICLES ////////////////////
 
 	// read in domain coordinates
-	std::ifstream inputFile("DomainCoord128.txt");
+	std::ifstream inputFile("DomainCoord.txt");
 	std::vector<std::vector<double> > domain_data;
 	std::string line;
 	while (getline(inputFile, line)) {
@@ -548,11 +548,11 @@ for (int idx =0; idx < domain_data.size(); idx++) {
 
 
 	// Write particles to file in ascii format if needed
-	particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
-	particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
-	particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
-	particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
-	particles::writeSnapshot("model_gasHalo_"+std::to_string(idx), gasHaloParticles, "text", extUnits);
+	//particles::writeSnapshot("model_stellar_"+std::to_string(idx), stellarParticles, "text", extUnits);
+	//particles::writeSnapshot("model_bulge_"+std::to_string(idx), bulgeParticles, "text", extUnits);
+	//particles::writeSnapshot("model_dmHalo_"+std::to_string(idx), dmHaloParticles, "text", extUnits);
+	//particles::writeSnapshot("model_gasDisk_"+std::to_string(idx), gasDiskParticles, "text", extUnits);
+	//particles::writeSnapshot("model_gasHalo_"+std::to_string(idx), gasHaloParticles, "text", extUnits);
 }
 
 return 0;
